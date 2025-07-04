@@ -314,7 +314,7 @@ def generate_comic_info_xml(issue_details):
 
 def organize_file(original_path, issue_details, output_dir, dry_run=False):
     if not issue_details:
-        return
+        return None
 
     volume_info = issue_details.get('volume', {})
     series_name_raw = volume_info.get('name')
@@ -327,7 +327,7 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     
     if not all([series_name, volume_year, issue_number_str]):
         print("  Could not determine new file name. Missing required details.")
-        return
+        return None
 
     # Format the issue number to be three digits with leading zeros
     issue_number_padded = issue_number_str.zfill(3)
@@ -367,7 +367,7 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
         
         # Before moving, check if the destination is the same as the source
         if original_path != new_file_path:
-            os.rename(original_path, new_file_path)
+            shutil.move(original_path, new_file_path)
         else:
             print("  Skipping move, file already organized.")
 
@@ -385,6 +385,8 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
                     print(f"  Error embedding ComicInfo.xml: {e}")
             elif new_file_path.lower().endswith('.cbr'):
                 print("  Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).")
+    
+    return new_series_folder
 
 def sanitize_filename(name):
     """Removes characters that are invalid for file and directory names."""
@@ -441,8 +443,9 @@ def convert_cbr_to_cbz(cbr_path):
 def main():
     load_dotenv()
     parser = argparse.ArgumentParser(description='Organize comic book files.')
-    parser.add_argument('input_dir', help='The directory containing the unorganized comic files.')
-    parser.add_argument('output_dir', help='The directory to store the organized comic files.')
+    parser.add_argument('input_dir', help='The directory containing the comic files to organize.')
+    parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
+    parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
     args = parser.parse_args()
 
@@ -455,31 +458,66 @@ def main():
         for cbr_file in cbr_files:
             convert_cbr_to_cbz(cbr_file)
 
-    comic_files = scan_comic_files(args.input_dir)
-    print(f"Found {len(comic_files)} comic files.")
+    # Determine the base output directory
+    base_output_dir = args.output_dir if args.output_dir else args.input_dir
 
-    # Group comics by parent directory
-    comics_by_folder = {}
-    for comic_file in comic_files:
-        folder = os.path.dirname(comic_file)
-        if folder not in comics_by_folder:
-            comics_by_folder[folder] = []
-        comics_by_folder[folder].append(comic_file)
+    # Handle the --series-folder argument
+    if args.series_folder:
+        target_folder = os.path.join(args.input_dir, args.series_folder)
+        if not os.path.isdir(target_folder):
+            print(f"Error: The specified series folder does not exist: {target_folder}")
+            return
+        comics_by_folder = {target_folder: [os.path.join(target_folder, f) for f in os.listdir(target_folder) if f.lower().endswith(('.cbz', '.cbr'))]}
+    else:
+        # Group all comics by their parent directory
+        all_comic_files = scan_comic_files(args.input_dir)
+        comics_by_folder = {}
+        for comic_file in all_comic_files:
+            folder = os.path.dirname(comic_file)
+            if folder not in comics_by_folder:
+                comics_by_folder[folder] = []
+            comics_by_folder[folder].append(comic_file)
 
     series_cache = {}
     volume_issues_cache = {}
+    processed_files = set()
 
     for folder, comics in comics_by_folder.items():
         print(f"\nProcessing folder: {folder}")
+        new_series_folder_path = None
+
         for comic_file in comics:
+            if comic_file in processed_files:
+                continue
+
             print(f"Processing {comic_file}...")
             cover_image = extract_cover_image(comic_file)
             if cover_image:
                 print(f"  Successfully extracted cover image.")
                 issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache)
-                organize_file(comic_file, issue_details, args.output_dir, args.dry_run)
+                
+                if issue_details:
+                    new_series_folder_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run)
+                    processed_files.add(comic_file)
             else:
                 print(f"  Could not extract cover image.")
+
+        # --- Extras and Cleanup Logic ---
+        if not args.dry_run and new_series_folder_path:
+            # Move any remaining files to an "Extras" folder
+            extras_folder = os.path.join(new_series_folder_path, 'Extras')
+            remaining_files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
+            
+            if remaining_files:
+                print(f"  Moving {len(remaining_files)} extra file(s) to: {extras_folder}")
+                os.makedirs(extras_folder, exist_ok=True)
+                for file in remaining_files:
+                    shutil.move(os.path.join(folder, file), os.path.join(extras_folder, file))
+
+            # Remove the original folder if it's empty and not the same as the new one
+            if not os.listdir(folder) and folder != new_series_folder_path:
+                print(f"  Removing empty original folder: {folder}")
+                os.rmdir(folder)
 
 
 if __name__ == '__main__':
