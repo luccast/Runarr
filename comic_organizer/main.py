@@ -47,10 +47,19 @@ import re
 
 def identify_comic(comic_file_path, cover_image):
     file_name = os.path.basename(comic_file_path)
-    # Clean the filename to remove parenthesized groups with letters
-    cleaned_name = re.sub(r'\s*\([^)]*[a-zA-Z][^)]*\)', '', file_name)
-    guess = guessit.guessit(cleaned_name)
-    series_title = guess.get('title')
+    folder_name = os.path.basename(os.path.dirname(comic_file_path))
+
+    # Extract series title and year from folder name
+    match = re.match(r'(.*?)\s*\((\d{4})\)', folder_name)
+    if match:
+        series_title = match.group(1).strip()
+        series_year = match.group(2)
+    else:
+        series_title = folder_name
+        series_year = None
+
+    # Use guessit on the filename to get the issue number
+    guess = guessit.guessit(file_name)
     issue_number = guess.get('issue')
 
     if cover_image:
@@ -59,12 +68,12 @@ def identify_comic(comic_file_path, cover_image):
 
     if series_title and issue_number:
         print(f"  Guessed Series: {series_title}, Issue: {issue_number}")
-        return search_comicvine(series_title, issue_number)
+        return search_comicvine(series_title, issue_number, series_year)
     else:
         print("  Could not guess series and issue from filename.")
         return None
 
-def search_comicvine(series_title, issue_number):
+def search_comicvine(series_title, issue_number, series_year=None):
     """
     Searches Comic Vine for a specific comic issue.
     """
@@ -72,7 +81,7 @@ def search_comicvine(series_title, issue_number):
         print("  Comic Vine API key is not set. Skipping search.")
         return None
 
-    print(f"  Searching Comic Vine for '{series_title}' issue #{issue_number}...")
+    print(f"  Searching Comic Vine for '{series_title}' issue #{issue_number} (Year: {series_year or 'Any'})...")
 
     # Search for the volume (series)
     search_url = "https://comicvine.gamespot.com/api/search/"
@@ -95,12 +104,25 @@ def search_comicvine(series_title, issue_number):
             print(f"  No results found for series '{series_title}'.")
             return None
 
-        # For now, let's just take the first result.
-        # In a real application, you might want to be smarter about this.
-        volume = results[0]
+        volume = None
+        if series_year:
+            # Try to find a volume with a matching start_year
+            for res in results:
+                if str(res.get('start_year')) == series_year:
+                    volume = res
+                    break
+        
+        if not volume and results:
+            # Fallback to the first result if no year match or no year provided
+            volume = results[0]
+
+        if not volume:
+            print(f"  No suitable volume found for series '{series_title}' (Year: {series_year or 'Any'}).")
+            return None
+
         volume_name = volume.get('name')
         volume_id = volume.get('id')
-        print(f"  Found volume: '{volume_name}' (ID: {volume_id})")
+        print(f"  Found volume: '{volume_name}' (ID: {volume_id}, Year: {volume.get('start_year')})")
 
         # Now, get the issues for that volume
         volume_url = f"https://comicvine.gamespot.com/api/volume/{volume_id}/"
@@ -135,7 +157,8 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
 
     volume_name = issue_details.get('volume', {}).get('name')
     issue_number = issue_details.get('issue_number')
-    year = issue_details.get('cover_date', 'unknown').split('-')[0] if issue_details.get('cover_date') else 'unknown'
+    # Use the year from the folder name if available, otherwise fall back to cover_date
+    year = issue_details.get('volume', {}).get('start_year') or (issue_details.get('cover_date', 'unknown').split('-')[0] if issue_details.get('cover_date') else 'unknown')
 
     if not all([volume_name, issue_number]):
         print("  Could not determine new file name. Missing volume name or issue number.")
