@@ -394,13 +394,16 @@ def sanitize_filename(name):
     """Removes characters that are invalid for file and directory names."""
     if not name:
         return ""
-    # Replace slashes and colons with a hyphen
-    name = name.replace('/', '-').replace(':', '-')
+    # Replace slashes with hyphens and colons with space-hyphen-space
+    name = name.replace('/', ' - ').replace(':', ' - ')
     # Remove other invalid characters
-    invalid_chars = r'<>:"\\|?*'
+    invalid_chars = r'<>:"\|?*'
     for char in invalid_chars:
         name = name.replace(char, '')
-    return name
+    # Clean up any double spaces that might have been created
+    while '  ' in name:
+        name = name.replace('  ', ' ')
+    return name.strip()
 
 
 def convert_cbr_to_cbz(cbr_path):
