@@ -1,9 +1,12 @@
 # RUNARR
+
+```
    ______     __  __     __   __     ______     ______     ______
   /\  == \   /\ \/\ \   /\ "-.\ \   /\  __ \   /\  == \   /\  == \
   \ \  __<   \ \ \_\ \  \ \ \-.  \  \ \  __ \  \ \  __<   \ \  __<
    \ \_\ \_\  \ \_____\  \ \_\\"\_\  \ \_\ \_\  \ \_\ \_\  \ \_\ \_\
     \/_/ /_/   \/_____/   \/_/ \/_/   \/_/\/_/   \/_/ /_/   \/_/ /_/
+```
 
 A tool to organize comic book archives (CBZ/CBR) by fetching metadata from Comic Vine and renaming/moving files accordingly.
 
