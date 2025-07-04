@@ -451,35 +451,39 @@ def main():
 """)
     load_dotenv()
     parser = argparse.ArgumentParser(description='Organize comic book files.')
-    parser.add_argument('input_dir', help='The directory containing the comic files to organize.')
+    parser.add_argument('input_dir', nargs='?', default=None, help='The directory containing the comic files to organize. Defaults to the current directory if not specified.')
     parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
     parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
     args = parser.parse_args()
 
+    # Determine input_dir
+    input_dir = args.input_dir if args.input_dir else os.getcwd()
+    if args.input_dir is None:
+        print(f"No input directory specified. Using current directory: {input_dir}")
 
     global COMICVINE_API_KEY
     COMICVINE_API_KEY = os.getenv("COMICVINE_API_KEY")
 
     # Convert all .cbr files to .cbz before processing
     if not args.dry_run:
-        cbr_files = [f for f in scan_comic_files(args.input_dir) if f.lower().endswith('.cbr')]
+        cbr_files = [f for f in scan_comic_files(input_dir) if f.lower().endswith('.cbr')]
         for cbr_file in cbr_files:
             convert_cbr_to_cbz(cbr_file)
 
     # Determine the base output directory
-    base_output_dir = args.output_dir if args.output_dir else args.input_dir
+    base_output_dir = args.output_dir if args.output_dir else input_dir
 
     # Handle the --series-folder argument
     if args.series_folder:
-        target_folder = os.path.join(args.input_dir, args.series_folder)
+        target_folder = os.path.join(input_dir, args.series_folder)
         if not os.path.isdir(target_folder):
             print(f"Error: The specified series folder does not exist: {target_folder}")
             return
         comics_by_folder = {target_folder: [os.path.join(target_folder, f) for f in os.listdir(target_folder) if f.lower().endswith(('.cbz', '.cbr'))]}
     else:
         # Group all comics by their parent directory
-        all_comic_files = scan_comic_files(args.input_dir)
+        all_comic_files = scan_comic_files(input_dir)
         comics_by_folder = {}
         for comic_file in all_comic_files:
             folder = os.path.dirname(comic_file)
