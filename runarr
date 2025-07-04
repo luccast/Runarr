@@ -1,0 +1,3 @@
+#!/bin/bash
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+"$SCRIPT_DIR/comic_organizer/venv/bin/python" "$SCRIPT_DIR/comic_organizer/main.py" "$@"

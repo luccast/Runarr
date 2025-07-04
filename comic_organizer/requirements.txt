@@ -1,0 +1,7 @@
+requests
+python-magic
+rarfile
+imagehash
+guessit
+Pillow
+python-dotenv
