@@ -52,22 +52,23 @@ You can run the tool using the installed script or directly via Python:
 
 ### As a CLI tool (after `pip install .`):
 ```sh
-runarr <input_dir> [output_dir] [--series-folder SERIES] [--dry-run]
+runarr [input_dir] [output_dir] [--series-folder SERIES] [--dry-run]
 ```
 
 ### Or directly:
 ```sh
-python -m comic_organizer.main <input_dir> [output_dir] [--series-folder SERIES] [--dry-run]
+python -m comic_organizer.main [input_dir] [output_dir] [--series-folder SERIES] [--dry-run]
 ```
 
 #### Arguments
-- `<input_dir>`: Directory containing your comic files (CBZ/CBR)
+- `[input_dir]`: (Optional) Directory containing your comic files (CBZ/CBR). Defaults to the current directory if not specified.
 - `[output_dir]`: (Optional) Directory to store organized files (defaults to in-place)
 - `--series-folder SERIES`: (Optional) Only process a specific series folder within the input directory
 - `--dry-run`: Perform a dry run without moving or renaming files
 
 #### Example
 ```sh
+runarr --dry-run
 runarr /path/to/comics /path/to/organized --dry-run
 ```
 
