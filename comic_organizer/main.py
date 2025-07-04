@@ -58,9 +58,21 @@ def identify_comic(comic_file_path, cover_image):
         series_title = folder_name
         series_year = None
 
-    # Use guessit on the filename to get the issue number
-    guess = guessit.guessit(file_name)
-    issue_number = guess.get('issue')
+    # Try to extract issue number from filename using regex
+    issue_number = None
+    if series_title:
+        # This pattern looks for the series title at the start of the filename,
+        # followed by a space, and then captures the issue number.
+        pattern = rf'^{re.escape(series_title)}\s+([0-9]+)'
+        issue_match = re.search(pattern, file_name, re.IGNORECASE)
+        if issue_match:
+            issue_number = issue_match.group(1)
+
+    # Fallback to guessit if the regex doesn't find an issue number
+    if not issue_number:
+        guess = guessit.guessit(file_name)
+        print(f"  Guessit result: {guess}")
+        issue_number = guess.get('issue')
 
     if cover_image:
         cover_hash = imagehash.phash(cover_image)
