@@ -468,12 +468,6 @@ def main():
     global COMICVINE_API_KEY
     COMICVINE_API_KEY = os.getenv("COMICVINE_API_KEY")
 
-    # Convert all .cbr files to .cbz before processing
-    if not args.dry_run:
-        cbr_files = [f for f in scan_comic_files(input_dir) if f.lower().endswith('.cbr')]
-        for cbr_file in cbr_files:
-            convert_cbr_to_cbz(cbr_file)
-
     # Determine the base output directory
     base_output_dir = args.output_dir if args.output_dir else input_dir
 
@@ -502,10 +496,18 @@ def main():
         new_series_folder_path = None
         processed_comics = set()
 
+        # Convert .cbr to .cbz in the current folder before processing
+        if not args.dry_run:
+            cbr_files = [f for f in comics if f.lower().endswith('.cbr')]
+            for cbr_file in cbr_files:
+                convert_cbr_to_cbz(cbr_file)
+            # Refresh the file list after conversion
+            comics = [f.replace('.cbr', '.cbz') if f.lower().endswith('.cbr') else f for f in comics]
+
         # Identify comic files and extra files
         all_files_in_folder = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-        comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith(('.cbz', '.cbr'))]
-        extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder]
+        comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith('.cbz')]  # Only look for .cbz files now
+        extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr')]
 
         for comic_file in comic_files_in_folder:
             print(f"Processing {comic_file}...")
