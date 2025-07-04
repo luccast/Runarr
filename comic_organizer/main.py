@@ -137,24 +137,40 @@ def search_comicvine(series_title, issue_number, series_year=None):
         print(f"  Found volume: '{volume_name}' (ID: {volume_id}, Year: {volume.get('start_year')})")
 
         # Now, get the issues for that volume
-        volume_url = f"https://comicvine.gamespot.com/api/volume/{volume_id}/"
+        volume_url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
         params = {
             "api_key": COMICVINE_API_KEY,
             "format": "json",
+            "field_list": "issues"
         }
         response = requests.get(volume_url, params=params, headers=headers)
         response.raise_for_status()
 
-        issues = response.json().get('results', {}).get('issues', [])
+        volume_details = response.json().get('results', {})
+        issues = volume_details.get('issues', [])
         if not issues:
             print(f"  No issues found for volume '{volume_name}'.")
             return None
 
         # Find the matching issue
         for issue in issues:
-            if issue.get('issue_number') == str(issue_number):
-                print(f"  Found issue: {issue.get('name')} ({issue.get('id')})")
-                return issue
+            try:
+                if issue.get('issue_number') and int(issue.get('issue_number')) == int(issue_number):
+                    # Now fetch the full issue details
+                    issue_url = f"https://comicvine.gamespot.com/api/issue/4000-{issue.get('id')}/"
+                    params = {
+                        "api_key": COMICVINE_API_KEY,
+                        "format": "json",
+                    }
+                    issue_response = requests.get(issue_url, params=params, headers=headers)
+                    issue_response.raise_for_status()
+                    issue_details = issue_response.json().get('results')
+                    if issue_details:
+                        print(f"  Found issue: {issue_details.get('name')} ({issue_details.get('id')})")
+                        return issue_details
+            except (ValueError, TypeError):
+                # Ignore if issue numbers are not valid integers
+                continue
 
         print(f"  No matching issue found for issue number {issue_number}.")
         return None
