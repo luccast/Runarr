@@ -45,9 +45,10 @@ def extract_cover_image(comic_file_path):
 
 import re
 
-def identify_comic(comic_file_path, cover_image):
+def identify_comic(comic_file_path, cover_image, series_cache):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
+    folder_path = os.path.dirname(comic_file_path)
 
     # Extract series title and year from folder name
     match = re.match(r'(.*?)\s*\((\d{4})\)', folder_name)
@@ -80,20 +81,29 @@ def identify_comic(comic_file_path, cover_image):
 
     if series_title and issue_number:
         print(f"  Guessed Series: {series_title}, Issue: {issue_number}")
-        return search_comicvine(series_title, issue_number, series_year)
+        
+        selected_volume = series_cache.get(folder_path)
+        if selected_volume is None:
+            selected_volume = select_series(series_title, series_year)
+            series_cache[folder_path] = selected_volume
+        
+        if selected_volume:
+            return search_issue(selected_volume, issue_number)
+        else:
+            return None
     else:
         print("  Could not guess series and issue from filename.")
         return None
 
-def search_comicvine(series_title, issue_number, series_year=None):
+def select_series(series_title, series_year=None):
     """
-    Searches Comic Vine for a specific comic issue.
+    Searches for a series and prompts the user to select from the results.
     """
     if not COMICVINE_API_KEY:
         print("  Comic Vine API key is not set. Skipping search.")
         return None
 
-    print(f"  Searching Comic Vine for '{series_title}' issue #{issue_number} (Year: {series_year or 'Any'})...")
+    print(f"  Searching Comic Vine for series '{series_title}' (Year: {series_year or 'Any'})...")
 
     # Search for the volume (series)
     search_url = "https://comicvine.gamespot.com/api/search/"
@@ -117,32 +127,56 @@ def search_comicvine(series_title, issue_number, series_year=None):
             return None
 
         volume = None
-        if series_year:
-            # Try to find a volume with a matching start_year
-            for res in results:
-                if str(res.get('start_year')) == series_year:
-                    volume = res
-                    break
-        
-        if not volume and results:
-            # Fallback to the first result if no year match or no year provided
+        if len(results) > 1:
+            print("  Multiple series found. Please select one:")
+            for i, res in enumerate(results):
+                print(f"    {i+1}: {res.get('name')} ({res.get('start_year')})")
+            print(f"    {len(results)+1}: None of the above")
+
+            while True:
+                try:
+                    choice = int(input("  Enter your choice: "))
+                    if 1 <= choice <= len(results):
+                        volume = results[choice-1]
+                        break
+                    elif choice == len(results) + 1:
+                        return None
+                    else:
+                        print("  Invalid choice. Please try again.")
+                except ValueError:
+                    print("  Invalid input. Please enter a number.")
+        elif results:
             volume = results[0]
+        
+        return volume
 
-        if not volume:
-            print(f"  No suitable volume found for series '{series_title}' (Year: {series_year or 'Any'}).")
-            return None
+    except requests.exceptions.RequestException as e:
+        print(f"  Error searching Comic Vine: {e}")
+        return None
 
-        volume_name = volume.get('name')
-        volume_id = volume.get('id')
-        print(f"  Found volume: '{volume_name}' (ID: {volume_id}, Year: {volume.get('start_year')})")
+def search_issue(volume, issue_number):
+    """
+    Searches for a specific issue within a given volume.
+    """
+    if not volume:
+        return None
 
-        # Now, get the issues for that volume
-        volume_url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
-        params = {
-            "api_key": COMICVINE_API_KEY,
-            "format": "json",
-            "field_list": "issues"
-        }
+    volume_name = volume.get('name')
+    volume_id = volume.get('id')
+    print(f"  Searching for issue #{issue_number} in volume '{volume_name}' (ID: {volume_id})...")
+
+    # Get the issues for that volume
+    volume_url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
+    params = {
+        "api_key": COMICVINE_API_KEY,
+        "format": "json",
+        "field_list": "issues"
+    }
+    headers = {
+        "User-Agent": "ComicOrganizer/1.0"
+    }
+
+    try:
         response = requests.get(volume_url, params=params, headers=headers)
         response.raise_for_status()
 
@@ -177,7 +211,7 @@ def search_comicvine(series_title, issue_number, series_year=None):
 
     except requests.exceptions.RequestException as e:
         print(f"  Error searching Comic Vine: {e}")
-    return None
+        return None
 
 def organize_file(original_path, issue_details, output_dir, dry_run=False):
     if not issue_details:
@@ -218,15 +252,29 @@ def main():
     comic_files = scan_comic_files(args.input_dir)
     print(f"Found {len(comic_files)} comic files.")
 
+    # Group comics by parent directory
+    comics_by_folder = {}
     for comic_file in comic_files:
-        print(f"Processing {comic_file}...")
-        cover_image = extract_cover_image(comic_file)
-        if cover_image:
-            print(f"  Successfully extracted cover image.")
-            issue_details = identify_comic(comic_file, cover_image)
-            organize_file(comic_file, issue_details, args.output_dir, args.dry_run)
-        else:
-            print(f"  Could not extract cover image.")
+        folder = os.path.dirname(comic_file)
+        if folder not in comics_by_folder:
+            comics_by_folder[folder] = []
+        comics_by_folder[folder].append(comic_file)
+
+    series_cache = {}
+
+    for folder, comics in comics_by_folder.items():
+        print(f"\nProcessing folder: {folder}")
+        selected_volume = None
+        for comic_file in comics:
+            print(f"Processing {comic_file}...")
+            cover_image = extract_cover_image(comic_file)
+            if cover_image:
+                print(f"  Successfully extracted cover image.")
+                issue_details = identify_comic(comic_file, cover_image, series_cache)
+                organize_file(comic_file, issue_details, args.output_dir, args.dry_run)
+            else:
+                print(f"  Could not extract cover image.")
+
 
 if __name__ == '__main__':
     main()
