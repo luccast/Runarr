@@ -59,21 +59,35 @@ def identify_comic(comic_file_path, cover_image, series_cache):
         series_title = folder_name
         series_year = None
 
-    # Try to extract issue number from filename using regex
+    # --- New Heuristic-Based Issue Number Extraction ---
     issue_number = None
-    if series_title:
-        # This pattern looks for the series title at the start of the filename,
-        # followed by a space, and then captures the issue number.
-        pattern = rf'^{re.escape(series_title)}\s+([0-9]+)'
-        issue_match = re.search(pattern, file_name, re.IGNORECASE)
-        if issue_match:
-            issue_number = issue_match.group(1)
+    
+    # 1. Prioritize numbers prefixed with '#'
+    hash_match = re.search(r'#(\d+)', file_name)
+    if hash_match:
+        issue_number = hash_match.group(1)
+    else:
+        # 2. Find all standalone numbers in the filename
+        potential_numbers = re.findall(r'\b\d+\b', file_name)
+        
+        # 3. Filter out likely years
+        non_year_numbers = [
+            num for num in potential_numbers 
+            if not (
+                (len(num) == 4 and (num.startswith('19') or num.startswith('20'))) or
+                (series_year and num == series_year)
+            )
+        ]
+        
+        # 4. Select the last remaining number
+        if non_year_numbers:
+            issue_number = non_year_numbers[-1]
 
-    # Fallback to guessit if the regex doesn't find an issue number
+    # 5. Fallback to guessit if the new logic fails
     if not issue_number:
         guess = guessit.guessit(file_name)
         print(f"  Guessit result: {guess}")
-        issue_number = guess.get('issue')
+        issue_number = guess.get('issue') or guess.get('episode')
 
     if cover_image:
         cover_hash = imagehash.phash(cover_image)
