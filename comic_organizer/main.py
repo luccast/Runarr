@@ -441,6 +441,14 @@ def convert_cbr_to_cbz(cbr_path):
 
 
 def main():
+    print("""
+ ______     __  __     __   __     ______     ______     ______    
+/\  == \   /\ \/\ \   /\ "-.\ \   /\  __ \   /\  == \   /\  == \   
+\ \  __<   \ \ \_\ \  \ \ \-.  \  \ \  __ \  \ \  __<   \ \  __<   
+ \ \_\ \_\  \ \_____\  \ \_\\"\_\  \ \_\ \_\  \ \_\ \_\  \ \_\ \_\ 
+  \/_/ /_/   \/_____/   \/_/ \/_/   \/_/\/_/   \/_/ /_/   \/_/ /_/ 
+                                                                   
+""")
     load_dotenv()
     parser = argparse.ArgumentParser(description='Organize comic book files.')
     parser.add_argument('input_dir', help='The directory containing the comic files to organize.')
@@ -448,6 +456,7 @@ def main():
     parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
     args = parser.parse_args()
+
 
     global COMICVINE_API_KEY
     COMICVINE_API_KEY = os.getenv("COMICVINE_API_KEY")
