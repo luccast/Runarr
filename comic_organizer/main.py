@@ -130,7 +130,7 @@ def select_series(series_title, series_year=None):
         if len(results) > 1:
             print("  Multiple series found. Please select one:")
             for i, res in enumerate(results):
-                print(f"    {i+1}: {res.get('name')} ({res.get('start_year')})")
+                print(f"    {i+1}: {res.get('name')} ({res.get('start_year')}) - {res.get('site_detail_url')}")
             print(f"    {len(results)+1}: None of the above")
 
             while True:
