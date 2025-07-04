@@ -8,6 +8,7 @@ import zipfile
 from rarfile import RarFile
 from PIL import Image
 from datetime import datetime
+import xml.etree.ElementTree as ET
 
 COMICVINE_API_KEY = ""
 
@@ -210,6 +211,7 @@ def search_issue(volume, issue_number):
                     params = {
                         "api_key": COMICVINE_API_KEY,
                         "format": "json",
+                        "field_list": "name,issue_number,description,cover_date,volume,person_credits,character_credits,team_credits,location_credits,site_detail_url"
                     }
                     issue_response = requests.get(issue_url, params=params, headers=headers)
                     issue_response.raise_for_status()
@@ -217,7 +219,7 @@ def search_issue(volume, issue_number):
                     if issue_details:
                         # Add the selected volume's info to the issue details
                         issue_details['volume'] = volume
-                        print(f"  Found issue: {issue_details.get('name')} ({issue_details.get('id')})")
+                        print(f"  Found issue: {issue_details.get('name') or volume.get('name')} ({issue_details.get('id')})")
                         return issue_details
             except (ValueError, TypeError):
                 # Ignore if issue numbers are not valid integers
@@ -229,6 +231,68 @@ def search_issue(volume, issue_number):
     except requests.exceptions.RequestException as e:
         print(f"  Error searching Comic Vine: {e}")
         return None
+
+def generate_comic_info_xml(issue_details):
+    """
+    Generates the ComicInfo.xml content as a string.
+    """
+    if not issue_details:
+        return None
+
+    volume_info = issue_details.get('volume', {})
+    
+    # Create the root element
+    root = ET.Element('ComicInfo', {
+        'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
+        'xmlns:xsd': 'http://www.w3.org/2001/XMLSchema'
+    })
+
+    # Helper to add a sub-element if the value exists
+    def add_element(parent, tag, value):
+        if value:
+            el = ET.SubElement(parent, tag)
+            el.text = str(value)
+
+    add_element(root, 'Title', issue_details.get('name'))
+    add_element(root, 'Series', volume_info.get('name'))
+    add_element(root, 'Number', issue_details.get('issue_number'))
+    add_element(root, 'Volume', volume_info.get('start_year'))
+    add_element(root, 'Publisher', volume_info.get('publisher', {}).get('name'))
+    add_element(root, 'Web', issue_details.get('site_detail_url'))
+
+    # Add summary, handling potential HTML
+    summary = issue_details.get('description')
+    if summary:
+        summary_el = ET.SubElement(root, 'Summary')
+        summary_el.text = summary  # The XML library handles escaping
+
+    # Add date fields
+    cover_date_str = issue_details.get('cover_date')
+    if cover_date_str:
+        try:
+            cover_date = datetime.strptime(cover_date_str, '%Y-%m-%d')
+            add_element(root, 'Year', cover_date.year)
+            add_element(root, 'Month', cover_date.month)
+            add_element(root, 'Day', cover_date.day)
+        except (ValueError, TypeError):
+            pass
+
+    # Add credits
+    add_element(root, 'Writer', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'writer' in p['role'].lower()]))
+    add_element(root, 'Penciller', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'penciller' in p['role'].lower()]))
+    add_element(root, 'Inker', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'inker' in p['role'].lower()]))
+    add_element(root, 'Colorist', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'colorist' in p['role'].lower()]))
+    add_element(root, 'Letterer', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'letterer' in p['role'].lower()]))
+    add_element(root, 'CoverArtist', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'cover' in p['role'].lower()]))
+    add_element(root, 'Editor', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'editor' in p['role'].lower()]))
+    
+    add_element(root, 'Characters', ', '.join([c['name'] for c in issue_details.get('character_credits', [])]))
+    add_element(root, 'Teams', ', '.join([t['name'] for t in issue_details.get('team_credits', [])]))
+    add_element(root, 'Locations', ', '.join([l['name'] for l in issue_details.get('location_credits', [])]))
+
+    # Convert the XML tree to a string
+    return ET.tostring(root, encoding='unicode')
+
 
 def organize_file(original_path, issue_details, output_dir, dry_run=False):
     if not issue_details:
@@ -268,12 +332,29 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     new_series_folder = os.path.join(output_dir, f"{series_name} ({volume_year})")
     new_file_path = os.path.join(new_series_folder, new_file_name)
 
+    # Generate ComicInfo.xml
+    comic_info_xml = generate_comic_info_xml(issue_details)
+
     if dry_run:
         print(f"  [DRY RUN] Would move and rename to: {new_file_path}")
+        if comic_info_xml:
+            print("  [DRY RUN] Would generate and embed ComicInfo.xml.")
     else:
         print(f"  Moving and renaming to: {new_file_path}")
         os.makedirs(new_series_folder, exist_ok=True)
         os.rename(original_path, new_file_path)
+
+        if comic_info_xml:
+            if new_file_path.lower().endswith('.cbz'):
+                try:
+                    with zipfile.ZipFile(new_file_path, 'a') as zf:
+                        zf.writestr('ComicInfo.xml', comic_info_xml)
+                    print("  Successfully embedded ComicInfo.xml.")
+                except Exception as e:
+                    print(f"  Error embedding ComicInfo.xml: {e}")
+            elif new_file_path.lower().endswith('.cbr'):
+                print("  Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).")
+
 
 def main():
     load_dotenv()
