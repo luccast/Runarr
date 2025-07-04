@@ -480,16 +480,18 @@ def main():
 
     series_cache = {}
     volume_issues_cache = {}
-    processed_files = set()
 
     for folder, comics in comics_by_folder.items():
         print(f"\nProcessing folder: {folder}")
         new_series_folder_path = None
+        processed_comics = set()
 
-        for comic_file in comics:
-            if comic_file in processed_files:
-                continue
+        # Identify comic files and extra files
+        all_files_in_folder = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
+        comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith(('.cbz', '.cbr'))]
+        extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder]
 
+        for comic_file in comic_files_in_folder:
             print(f"Processing {comic_file}...")
             cover_image = extract_cover_image(comic_file)
             if cover_image:
@@ -497,22 +499,25 @@ def main():
                 issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache)
                 
                 if issue_details:
-                    new_series_folder_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run)
-                    processed_files.add(comic_file)
+                    # The organize_file function now returns the path to the *newly created* file
+                    new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run)
+                    if new_file_path:
+                        processed_comics.add(new_file_path)
+                        # Determine the new series folder from the first successfully processed comic
+                        if not new_series_folder_path:
+                            new_series_folder_path = os.path.dirname(new_file_path)
             else:
                 print(f"  Could not extract cover image.")
 
         # --- Extras and Cleanup Logic ---
         if not args.dry_run and new_series_folder_path:
             # Move any remaining files to an "Extras" folder
-            extras_folder = os.path.join(new_series_folder_path, 'Extras')
-            remaining_files = [f for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-            
-            if remaining_files:
-                print(f"  Moving {len(remaining_files)} extra file(s) to: {extras_folder}")
+            if extra_files:
+                extras_folder = os.path.join(new_series_folder_path, 'Extras')
+                print(f"  Moving {len(extra_files)} extra file(s) to: {extras_folder}")
                 os.makedirs(extras_folder, exist_ok=True)
-                for file in remaining_files:
-                    shutil.move(os.path.join(folder, file), os.path.join(extras_folder, file))
+                for file_path in extra_files:
+                    shutil.move(file_path, os.path.join(extras_folder, os.path.basename(file_path)))
 
             # Remove the original folder if it's empty and not the same as the new one
             if not os.listdir(folder) and folder != new_series_folder_path:
