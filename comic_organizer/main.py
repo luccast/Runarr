@@ -9,6 +9,8 @@ from rarfile import RarFile
 from PIL import Image
 from datetime import datetime
 import xml.etree.ElementTree as ET
+import tempfile
+import shutil
 
 COMICVINE_API_KEY = ""
 
@@ -355,6 +357,44 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
             elif new_file_path.lower().endswith('.cbr'):
                 print("  Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).")
 
+def convert_cbr_to_cbz(cbr_path):
+    """
+    Converts a .cbr file to a .cbz file.
+    """
+    cbz_path = os.path.splitext(cbr_path)[0] + '.cbz'
+    temp_dir = tempfile.mkdtemp()
+    
+    try:
+        print(f"Converting {cbr_path} to .cbz...")
+        with RarFile(cbr_path, 'r') as archive:
+            archive.extractall(temp_dir)
+        
+        with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zf.write(file_path, arcname)
+        
+        # Validate the new cbz file
+        with zipfile.ZipFile(cbz_path, 'r') as zf:
+            if zf.testzip() is not None:
+                raise Exception("Failed to validate the new .cbz file.")
+        
+        print(f"  Successfully converted to {cbz_path}")
+        os.remove(cbr_path)
+        return cbz_path
+
+    except Exception as e:
+        print(f"  Error converting {cbr_path}: {e}")
+        # Clean up the partially created .cbz file if conversion fails
+        if os.path.exists(cbz_path):
+            os.remove(cbz_path)
+        return None
+    finally:
+        shutil.rmtree(temp_dir)
+
+
 
 def main():
     load_dotenv()
@@ -366,6 +406,12 @@ def main():
 
     global COMICVINE_API_KEY
     COMICVINE_API_KEY = os.getenv("COMICVINE_API_KEY")
+
+    # Convert all .cbr files to .cbz before processing
+    if not args.dry_run:
+        cbr_files = [f for f in scan_comic_files(args.input_dir) if f.lower().endswith('.cbr')]
+        for cbr_file in cbr_files:
+            convert_cbr_to_cbz(cbr_file)
 
     comic_files = scan_comic_files(args.input_dir)
     print(f"Found {len(comic_files)} comic files.")
