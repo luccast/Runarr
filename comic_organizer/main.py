@@ -11,6 +11,8 @@ from datetime import datetime
 import xml.etree.ElementTree as ET
 import tempfile
 import shutil
+import json
+from pathlib import Path
 
 COMICVINE_API_KEY = ""
 
@@ -449,31 +451,51 @@ def main():
   \/_/ /_/   \/_____/   \/_/ \/_/   \/_/\/_/   \/_/ /_/   \/_/ /_/ 
                                                                    
 """)
-    # Try to load .env from multiple locations
-    env_loaded = False
-    env_paths = [
-        os.path.join(os.getcwd(), '.env'),  # Current working directory
-        os.path.expanduser('~/.runarr.env'),  # User's home directory
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')  # Script's directory
-    ]
+    # Set up config directory and file
+    config_dir = Path.home() / '.runarr'
+    config_file = config_dir / 'config.json'
     
-    for env_path in env_paths:
-        if os.path.exists(env_path):
-            load_dotenv(env_path)
-            print(f"Loaded environment from: {env_path}")
-            env_loaded = True
-            break
+    # Create config directory if it doesn't exist
+    config_dir.mkdir(exist_ok=True, mode=0o700)  # Create with secure permissions
     
-    if not env_loaded:
-        print("Warning: No .env file found in any of the following locations:")
-        for path in env_paths:
-            print(f"  - {path}")
-        print("Please ensure you have a .env file with your COMICVINE_API_KEY")
+    # Load existing config if it exists
+    config = {}
+    if config_file.exists():
+        try:
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+        except json.JSONDecodeError:
+            print("Warning: Config file is corrupted. Creating a new one.")
+    
+    # Get API key from command line, environment, or config
+    global COMICVINE_API_KEY
+    if args.comicvine_api_key:
+        # Save the API key if provided via command line
+        config['comicvine_api_key'] = args.comicvine_api_key
+        with open(config_file, 'w') as f:
+            json.dump(config, f)
+        print("Comic Vine API key has been saved.")
+        COMICVINE_API_KEY = args.comicvine_api_key
+    else:
+        # Try to get the API key from config or environment
+        COMICVINE_API_KEY = config.get('comicvine_api_key') or os.getenv('COMICVINE_API_KEY')
+    
+    if not COMICVINE_API_KEY:
+        print("""
+Error: No Comic Vine API key found.
+Please provide your API key using one of these methods:
+1. Run with --comicvine-api-key "your_api_key_here"
+2. Set the COMICVINE_API_KEY environment variable
+
+Get an API key from: https://comicvine.gamespot.com/api/
+""")
+        return
     parser = argparse.ArgumentParser(description='Organize comic book files.')
     parser.add_argument('input_dir', nargs='?', default=None, help='The directory containing the comic files to organize. Defaults to the current directory if not specified.')
     parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
     parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
+    parser.add_argument('--comicvine-api-key', help='Set or update your Comic Vine API key. This will be saved for future use.')
     args = parser.parse_args()
 
     # Determine input_dir
@@ -481,8 +503,7 @@ def main():
     if args.input_dir is None:
         print(f"No input directory specified. Using current directory: {input_dir}")
 
-    global COMICVINE_API_KEY
-    COMICVINE_API_KEY = os.getenv("COMICVINE_API_KEY")
+    # API key is now loaded at the beginning of main()
 
     # Determine the base output directory
     base_output_dir = args.output_dir if args.output_dir else input_dir
