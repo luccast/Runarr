@@ -443,14 +443,23 @@ def convert_cbr_to_cbz(cbr_path):
 
 
 def main():
+    # Parse command line arguments first
+    parser = argparse.ArgumentParser(description='Organize comic book files.')
+    parser.add_argument('input_dir', nargs='?', default=None, help='The directory containing the comic files to organize. Defaults to the current directory if not specified.')
+    parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
+    parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
+    parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
+    parser.add_argument('--comicvine-api-key', help='Set or update your Comic Vine API key. This will be saved for future use.')
+    args = parser.parse_args()
+
     print("""
  ______     __  __     __   __     ______     ______     ______    
-/\  == \   /\ \/\ \   /\ "-.\ \   /\  __ \   /\  == \   /\  == \   
-\ \  __<   \ \ \_\ \  \ \ \-.  \  \ \  __ \  \ \  __<   \ \  __<   
- \ \_\ \_\  \ \_____\  \ \_\\"\_\  \ \_\ \_\  \ \_\ \_\  \ \_\ \_\ 
-  \/_/ /_/   \/_____/   \/_/ \/_/   \/_/\/_/   \/_/ /_/   \/_/ /_/ 
+/\\  == \\   /\\ \\/\\ \\   /\\ \"-.\\ \\   /\\  __ \\   /\\  == \\   /\\  == \\   \n\\ \\  __<   \\ \\ \\_\\ \\  \\ \\ \\-.  \\  \\ \\  __ \\  \\ \\  __<   \\ \\  __<   
+ \\\\ \\_\\ \\_\\  \\ \\\\_____\\  \\ \\_\\"\\_\\  \\ \\_\\ \\_\\  \\ \\_\\ \\_\\  \\ \\_\\ \\_\\ 
+  \\/_/ /_/   \\/_____/   \\/_/ \\/_/   \\/_/\\/_/   \\/_/ /_/   \\/_/ /_/ 
                                                                    
 """)
+    
     # Set up config directory and file
     config_dir = Path.home() / '.runarr'
     config_file = config_dir / 'config.json'
@@ -490,13 +499,6 @@ Please provide your API key using one of these methods:
 Get an API key from: https://comicvine.gamespot.com/api/
 """)
         return
-    parser = argparse.ArgumentParser(description='Organize comic book files.')
-    parser.add_argument('input_dir', nargs='?', default=None, help='The directory containing the comic files to organize. Defaults to the current directory if not specified.')
-    parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
-    parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
-    parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
-    parser.add_argument('--comicvine-api-key', help='Set or update your Comic Vine API key. This will be saved for future use.')
-    args = parser.parse_args()
 
     # Determine input_dir
     input_dir = args.input_dir if args.input_dir else os.getcwd()
