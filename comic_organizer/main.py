@@ -449,7 +449,10 @@ def main():
   \/_/ /_/   \/_____/   \/_/ \/_/   \/_/\/_/   \/_/ /_/   \/_/ /_/ 
                                                                    
 """)
-    load_dotenv()
+    # Always load .env from the same directory as this script
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    dotenv_path = os.path.join(script_dir, '.env')
+    load_dotenv(dotenv_path)
     parser = argparse.ArgumentParser(description='Organize comic book files.')
     parser.add_argument('input_dir', nargs='?', default=None, help='The directory containing the comic files to organize. Defaults to the current directory if not specified.')
     parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
