@@ -18,20 +18,27 @@ def scan_comic_files(input_dir):
                 comic_files.append(os.path.join(root, file))
     return comic_files
 
+import io
+
 def extract_cover_image(comic_file_path):
     try:
+        image_data = None
         if comic_file_path.lower().endswith('.cbz'):
             with zipfile.ZipFile(comic_file_path, 'r') as archive:
                 image_files = sorted([f for f in archive.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
                 if image_files:
                     with archive.open(image_files[0]) as image_file:
-                        return Image.open(image_file)
+                        image_data = image_file.read()
         elif comic_file_path.lower().endswith('.cbr'):
             with RarFile(comic_file_path, 'r') as archive:
                 image_files = sorted([f for f in archive.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
                 if image_files:
                     with archive.open(image_files[0]) as image_file:
-                        return Image.open(image_file)
+                        image_data = image_file.read()
+        
+        if image_data:
+            return Image.open(io.BytesIO(image_data))
+
     except Exception as e:
         print(f"Error extracting cover from {comic_file_path}: {e}")
     return None
