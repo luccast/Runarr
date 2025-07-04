@@ -42,7 +42,8 @@ A tool to organize comic book archives (CBZ/CBR) by fetching metadata from Comic
    ```
 
 3. **Set up your Comic Vine API key:**
-   - Create a `.env` file in the project root (or wherever you run the script) with:
+   - Run the program the first time with `--comicvine-api-key "yourkey"` to save it in your local home directory.
+   - Alternatively, create a `.env` file in the project root (or wherever you run the script) with:
      ```env
      COMICVINE_API_KEY=your_api_key_here
      ```
