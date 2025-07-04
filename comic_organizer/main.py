@@ -49,7 +49,7 @@ def extract_cover_image(comic_file_path):
 
 import re
 
-def identify_comic(comic_file_path, cover_image, series_cache):
+def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
     folder_path = os.path.dirname(comic_file_path)
@@ -100,18 +100,91 @@ def identify_comic(comic_file_path, cover_image, series_cache):
     if series_title and issue_number:
         print(f"  Guessed Series: {series_title}, Issue: {issue_number}")
         
+        # Step 1: Get the selected volume (cached per folder)
         selected_volume = series_cache.get(folder_path)
         if selected_volume is None:
             selected_volume = select_series(series_title, series_year)
             series_cache[folder_path] = selected_volume
         
-        if selected_volume:
-            return search_issue(selected_volume, issue_number)
-        else:
+        if not selected_volume:
             return None
+
+        # Step 2: Get the list of all issues for the volume (cached per folder)
+        issues_map = volume_issues_cache.get(folder_path)
+        if issues_map is None:
+            issues_map = fetch_volume_issues(selected_volume)
+            volume_issues_cache[folder_path] = issues_map
+        
+        if not issues_map:
+            return None
+
+        # Step 3: Find the specific issue in the cached list
+        issue_summary = issues_map.get(str(int(issue_number))) # Normalize issue number
+        if not issue_summary:
+            print(f"  Could not find issue #{issue_number} in the series list.")
+            return None
+            
+        # Step 4: Fetch the detailed metadata for the specific issue
+        return fetch_issue_details(issue_summary, selected_volume)
+
     else:
         print("  Could not guess series and issue from filename.")
         return None
+
+def fetch_volume_issues(volume):
+    """
+    Fetches all issues for a given volume and returns a map of issue numbers to issue summaries.
+    """
+    volume_name = volume.get('name')
+    volume_id = volume.get('id')
+    print(f"  Fetching all issues for volume '{volume_name}' (ID: {volume_id})...")
+
+    volume_url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
+    params = { "api_key": COMICVINE_API_KEY, "format": "json", "field_list": "issues" }
+    headers = { "User-Agent": "ComicOrganizer/1.0" }
+
+    try:
+        response = requests.get(volume_url, params=params, headers=headers)
+        response.raise_for_status()
+        issues = response.json().get('results', {}).get('issues', [])
+        
+        # Create a map of issue number to issue summary for quick lookups
+        issues_map = {issue['issue_number']: issue for issue in issues}
+        print(f"  Found and cached {len(issues_map)} issues for this volume.")
+        return issues_map
+
+    except requests.exceptions.RequestException as e:
+        print(f"  Error fetching volume issues: {e}")
+        return {}
+
+def fetch_issue_details(issue_summary, volume):
+    """
+    Fetches the full details for a single issue.
+    """
+    issue_id = issue_summary.get('id')
+    print(f"  Fetching details for issue ID: {issue_id}...")
+
+    issue_url = f"https://comicvine.gamespot.com/api/issue/4000-{issue_id}/"
+    params = {
+        "api_key": COMICVINE_API_KEY,
+        "format": "json",
+        "field_list": "name,issue_number,description,cover_date,volume,person_credits,character_credits,team_credits,location_credits,site_detail_url"
+    }
+    headers = { "User-Agent": "ComicOrganizer/1.0" }
+
+    try:
+        response = requests.get(issue_url, params=params, headers=headers)
+        response.raise_for_status()
+        issue_details = response.json().get('results')
+        if issue_details:
+            issue_details['volume'] = volume  # Inject the full volume info
+            print(f"  Found issue: {issue_details.get('name') or volume.get('name')} ({issue_details.get('id')})")
+            return issue_details
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"  Error fetching issue details: {e}")
+        return None
+
 
 def select_series(series_title, series_year=None):
     """
@@ -172,67 +245,7 @@ def select_series(series_title, series_year=None):
         print(f"  Error searching Comic Vine: {e}")
         return None
 
-def search_issue(volume, issue_number):
-    """
-    Searches for a specific issue within a given volume.
-    """
-    if not volume:
-        return None
 
-    volume_name = volume.get('name')
-    volume_id = volume.get('id')
-    print(f"  Searching for issue #{issue_number} in volume '{volume_name}' (ID: {volume_id})...")
-
-    # Get the issues for that volume
-    volume_url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
-    params = {
-        "api_key": COMICVINE_API_KEY,
-        "format": "json",
-        "field_list": "issues"
-    }
-    headers = {
-        "User-Agent": "ComicOrganizer/1.0"
-    }
-
-    try:
-        response = requests.get(volume_url, params=params, headers=headers)
-        response.raise_for_status()
-
-        volume_details = response.json().get('results', {})
-        issues = volume_details.get('issues', [])
-        if not issues:
-            print(f"  No issues found for volume '{volume_name}'.")
-            return None
-
-        # Find the matching issue
-        for issue in issues:
-            try:
-                if issue.get('issue_number') and int(issue.get('issue_number')) == int(issue_number):
-                    # Now fetch the full issue details
-                    issue_url = f"https://comicvine.gamespot.com/api/issue/4000-{issue.get('id')}/"
-                    params = {
-                        "api_key": COMICVINE_API_KEY,
-                        "format": "json",
-                        "field_list": "name,issue_number,description,cover_date,volume,person_credits,character_credits,team_credits,location_credits,site_detail_url"
-                    }
-                    issue_response = requests.get(issue_url, params=params, headers=headers)
-                    issue_response.raise_for_status()
-                    issue_details = issue_response.json().get('results')
-                    if issue_details:
-                        # Add the selected volume's info to the issue details
-                        issue_details['volume'] = volume
-                        print(f"  Found issue: {issue_details.get('name') or volume.get('name')} ({issue_details.get('id')})")
-                        return issue_details
-            except (ValueError, TypeError):
-                # Ignore if issue numbers are not valid integers
-                continue
-
-        print(f"  No matching issue found for issue number {issue_number}.")
-        return None
-
-    except requests.exceptions.RequestException as e:
-        print(f"  Error searching Comic Vine: {e}")
-        return None
 
 def generate_comic_info_xml(issue_details):
     """
@@ -301,7 +314,11 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
         return
 
     volume_info = issue_details.get('volume', {})
-    series_name = volume_info.get('name')
+    series_name_raw = volume_info.get('name')
+    
+    # Sanitize the series name for use in file paths
+    series_name = sanitize_filename(series_name_raw)
+
     volume_year = volume_info.get('start_year')
     issue_number_str = issue_details.get('issue_number')
     
@@ -344,18 +361,40 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     else:
         print(f"  Moving and renaming to: {new_file_path}")
         os.makedirs(new_series_folder, exist_ok=True)
-        os.rename(original_path, new_file_path)
+        
+        # Before moving, check if the destination is the same as the source
+        if original_path != new_file_path:
+            os.rename(original_path, new_file_path)
+        else:
+            print("  Skipping move, file already organized.")
 
         if comic_info_xml:
             if new_file_path.lower().endswith('.cbz'):
                 try:
                     with zipfile.ZipFile(new_file_path, 'a') as zf:
-                        zf.writestr('ComicInfo.xml', comic_info_xml)
-                    print("  Successfully embedded ComicInfo.xml.")
+                        # Check if ComicInfo.xml already exists
+                        if 'ComicInfo.xml' not in zf.namelist():
+                            zf.writestr('ComicInfo.xml', comic_info_xml)
+                            print("  Successfully embedded ComicInfo.xml.")
+                        else:
+                            print("  ComicInfo.xml already exists. Skipping embedding.")
                 except Exception as e:
                     print(f"  Error embedding ComicInfo.xml: {e}")
             elif new_file_path.lower().endswith('.cbr'):
                 print("  Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).")
+
+def sanitize_filename(name):
+    """Removes characters that are invalid for file and directory names."""
+    if not name:
+        return ""
+    # Replace slashes and colons with a hyphen
+    name = name.replace('/', '-').replace(':', '-')
+    # Remove other invalid characters
+    invalid_chars = r'<>:"\\|?*'
+    for char in invalid_chars:
+        name = name.replace(char, '')
+    return name
+
 
 def convert_cbr_to_cbz(cbr_path):
     """
@@ -425,16 +464,16 @@ def main():
         comics_by_folder[folder].append(comic_file)
 
     series_cache = {}
+    volume_issues_cache = {}
 
     for folder, comics in comics_by_folder.items():
         print(f"\nProcessing folder: {folder}")
-        selected_volume = None
         for comic_file in comics:
             print(f"Processing {comic_file}...")
             cover_image = extract_cover_image(comic_file)
             if cover_image:
                 print(f"  Successfully extracted cover image.")
-                issue_details = identify_comic(comic_file, cover_image, series_cache)
+                issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache)
                 organize_file(comic_file, issue_details, args.output_dir, args.dry_run)
             else:
                 print(f"  Could not extract cover image.")
