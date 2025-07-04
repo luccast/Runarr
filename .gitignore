@@ -4,3 +4,5 @@ venv/
 __pycache__/
 /__pycache__/
 /comic_organizer.egg-info/
+collect-metadata.md
+comic-info-example.md
