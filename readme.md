@@ -8,7 +8,7 @@
     \/_/ /_/   \/_____/   \/_/ \/_/   \/_/\/_/   \/_/ /_/   \/_/ /_/
 ```
 
-A tool to organize comic book archives (CBZ/CBR) by fetching metadata from Comic Vine and renaming/moving files accordingly.
+A tool to organize comic book runs in archive (CBZ/CBR) format by fetching metadata from Comic Vine and renaming/moving files accordingly.
 
 ## Features
 - Organizes `.cbz` and `.cbr` comic files into structured folders
