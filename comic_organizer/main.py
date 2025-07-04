@@ -386,7 +386,7 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
             elif new_file_path.lower().endswith('.cbr'):
                 print("  Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).")
     
-    return new_series_folder
+    return new_file_path
 
 def sanitize_filename(name):
     """Removes characters that are invalid for file and directory names."""
