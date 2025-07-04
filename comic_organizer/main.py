@@ -66,13 +66,16 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
     # --- New Heuristic-Based Issue Number Extraction ---
     issue_number = None
     
+    # Pre-process the filename to remove content in parentheses
+    clean_file_name = re.sub(r'\(.*?\)', '', file_name)
+
     # 1. Prioritize numbers prefixed with '#'
-    hash_match = re.search(r'#(\d+)', file_name)
+    hash_match = re.search(r'#(\d+)', clean_file_name)
     if hash_match:
         issue_number = hash_match.group(1)
     else:
         # 2. Find all standalone numbers in the filename
-        potential_numbers = re.findall(r'\b\d+\b', file_name)
+        potential_numbers = re.findall(r'\b\d+\b', clean_file_name)
         
         # 3. Filter out likely years
         non_year_numbers = [
