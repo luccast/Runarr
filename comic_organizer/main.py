@@ -43,8 +43,13 @@ def extract_cover_image(comic_file_path):
         print(f"Error extracting cover from {comic_file_path}: {e}")
     return None
 
+import re
+
 def identify_comic(comic_file_path, cover_image):
-    guess = guessit.guessit(comic_file_path)
+    file_name = os.path.basename(comic_file_path)
+    # Clean the filename to remove parenthesized groups with letters
+    cleaned_name = re.sub(r'\s*\([^)]*[a-zA-Z][^)]*\)', '', file_name)
+    guess = guessit.guessit(cleaned_name)
     series_title = guess.get('title')
     issue_number = guess.get('issue')
 
