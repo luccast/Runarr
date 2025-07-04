@@ -13,6 +13,7 @@ A tool to organize comic book archives (CBZ/CBR) by fetching metadata from Comic
 ## Features
 - Organizes `.cbz` and `.cbr` comic files into structured folders
 - Fetches metadata from Comic Vine
+- Select from matched series with link to Comic Vine Series
 - Renames files and folders based on series, issue, and date
 - Converts `.cbr` files to `.cbz` automatically
 - Embeds `ComicInfo.xml` metadata into `.cbz` files
