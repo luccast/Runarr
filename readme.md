@@ -23,6 +23,7 @@ A tool to organize comic book archives (CBZ/CBR) by fetching metadata from Comic
 ## Requirements
 - Python 3.7+
 - [Comic Vine API Key](https://comicvine.gamespot.com/api/)
+- For .cbr file support: `unrar` (or equivalent) must be installed and available in your system PATH
 
 ## Installation
 
