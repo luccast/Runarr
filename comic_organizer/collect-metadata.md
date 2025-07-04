@@ -1,14 +1,11 @@
-After matching, we can rename the folders and files according to this schema:
-Folder Format: 
-- $Publisher/$Series ($Year)
-    - Use: $Publisher, $Series, $Year
-    - E.g.: $Publisher/$Series ($Year) = DC Comics/Action Comics (2011)
+After matching issues, we can name the folders and files according to this schema:
+Folder Format: $Series ($Year)
+    - Example: $Series ($Year) = X-Men (2011)
 
 File Format: 
 - $Series $VolumeY $Annual #$Issue ($monthname $Year)
-    - Use: $Series, $Year, $Issue
-    - E.g.: $Series $Issue ($Year) = Animal Man 0 (2012)
-    if tag isn't available, won't create it
+    - Example: $Series $VolumeY $Annual #$Issue ($monthname $Year) = X-Men V2021 #022 (July 2023)
+    - There many be Annual issues which as seperate from the other issues. If the file contains the word "Annual", we should add Annual to the filename.
 
 ComicInfo.xml file
 Book metadata

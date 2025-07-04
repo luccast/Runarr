@@ -7,6 +7,7 @@ import requests
 import zipfile
 from rarfile import RarFile
 from PIL import Image
+from datetime import datetime
 
 COMICVINE_API_KEY = ""
 
@@ -214,6 +215,8 @@ def search_issue(volume, issue_number):
                     issue_response.raise_for_status()
                     issue_details = issue_response.json().get('results')
                     if issue_details:
+                        # Add the selected volume's info to the issue details
+                        issue_details['volume'] = volume
                         print(f"  Found issue: {issue_details.get('name')} ({issue_details.get('id')})")
                         return issue_details
             except (ValueError, TypeError):
@@ -231,18 +234,38 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     if not issue_details:
         return
 
-    volume_name = issue_details.get('volume', {}).get('name')
-    issue_number = issue_details.get('issue_number')
-    # Use the year from the folder name if available, otherwise fall back to cover_date
-    year = issue_details.get('volume', {}).get('start_year') or (issue_details.get('cover_date', 'unknown').split('-')[0] if issue_details.get('cover_date') else 'unknown')
-
-    if not all([volume_name, issue_number]):
-        print("  Could not determine new file name. Missing volume name or issue number.")
+    volume_info = issue_details.get('volume', {})
+    series_name = volume_info.get('name')
+    volume_year = volume_info.get('start_year')
+    issue_number_str = issue_details.get('issue_number')
+    
+    if not all([series_name, volume_year, issue_number_str]):
+        print("  Could not determine new file name. Missing required details.")
         return
 
+    # Format the issue number to be three digits with leading zeros
+    issue_number_padded = issue_number_str.zfill(3)
+
+    # Format the cover date
+    cover_date_str = issue_details.get('cover_date')
+    if cover_date_str:
+        try:
+            cover_date = datetime.strptime(cover_date_str, '%Y-%m-%d')
+            date_formatted = cover_date.strftime('%B %Y')
+        except (ValueError, TypeError):
+            date_formatted = "Unknown Date"
+    else:
+        date_formatted = "Unknown Date"
+
+    # Check for "Annual" in the original filename
+    annual_str = " Annual" if "annual" in os.path.basename(original_path).lower() else ""
+
+    # Construct the new filename
     _, extension = os.path.splitext(original_path)
-    new_series_folder = os.path.join(output_dir, f"{volume_name} ({year})")
-    new_file_name = f"{volume_name} - Issue #{issue_number}{extension}"
+    new_file_name = f"{series_name} V{volume_year}{annual_str} #{issue_number_padded} ({date_formatted}){extension}"
+    
+    # Construct the new folder path
+    new_series_folder = os.path.join(output_dir, f"{series_name} ({volume_year})")
     new_file_path = os.path.join(new_series_folder, new_file_name)
 
     if dry_run:
