@@ -16,25 +16,49 @@ import time
 from pathlib import Path
 from functools import wraps
 
-# Rate limiting for Comic Vine API (X seconds between requests)
+# Rate limiting for Comic Vine API
 COMICVINE_API_KEY = ""
 LAST_API_CALL_TIME = 0
+API_CALL_TIMESTAMPS = []
+HOURLY_LIMIT = 199  # Leave a small buffer
+MIN_SECONDS_BETWEEN_CALLS = 4.0
 
 def rate_limited():
-    """Decorator to ensure at least X seconds between Comic Vine API calls."""
+    """
+    Decorator to ensure API calls respect both a minimum delay and an hourly limit.
+    """
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            global LAST_API_CALL_TIME
+            global LAST_API_CALL_TIME, API_CALL_TIMESTAMPS
+
+            # 1. Enforce minimum time between calls
             current_time = time.time()
             time_since_last_call = current_time - LAST_API_CALL_TIME
-            
-            if time_since_last_call < 4.0:
-                sleep_time = 4.0 - time_since_last_call
+            if time_since_last_call < MIN_SECONDS_BETWEEN_CALLS:
+                sleep_time = MIN_SECONDS_BETWEEN_CALLS - time_since_last_call
+                print(f"  Rate limit: sleeping for {sleep_time:.2f}s to maintain call frequency.")
                 time.sleep(sleep_time)
-                
+
+            # 2. Enforce hourly limit
+            one_hour_ago = time.time() - 3600
+            # Remove timestamps older than an hour
+            API_CALL_TIMESTAMPS[:] = [t for t in API_CALL_TIMESTAMPS if t > one_hour_ago]
+
+            if len(API_CALL_TIMESTAMPS) >= HOURLY_LIMIT:
+                oldest_call = API_CALL_TIMESTAMPS[0]
+                wait_time = (oldest_call + 3600) - time.time()
+                if wait_time > 0:
+                    print(f"  Rate limit: hourly limit reached. Waiting for {wait_time:.2f}s.")
+                    time.sleep(wait_time)
+
+            # Make the API call
             result = func(*args, **kwargs)
+
+            # Record the call
             LAST_API_CALL_TIME = time.time()
+            API_CALL_TIMESTAMPS.append(LAST_API_CALL_TIME)
+
             return result
         return wrapper
     return decorator
@@ -74,7 +98,7 @@ def extract_cover_image(comic_file_path):
 
 import re
 
-def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache):
+def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
     folder_path = os.path.dirname(comic_file_path)
@@ -151,9 +175,21 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         if not issue_summary:
             print(f"  Could not find issue #{issue_number} in the series list.")
             return None
-            
-        # Step 4: Fetch the detailed metadata for the specific issue
-        return fetch_issue_details(issue_summary, selected_volume)
+
+        # Step 4: Check cache or fetch the detailed metadata for the specific issue
+        volume_id = selected_volume.get('id')
+        issue_num_str = issue_summary.get('issue_number')
+        cache_key = f"{volume_id}-{issue_num_str}"
+
+        if cache_key in issue_details_cache:
+            print(f"  Found issue #{issue_num_str} in cache. Skipping API call.")
+            return issue_details_cache[cache_key]
+        else:
+            issue_details = fetch_issue_details(issue_summary, selected_volume)
+            if issue_details:
+                print(f"  Adding issue #{issue_num_str} to cache.")
+                issue_details_cache[cache_key] = issue_details
+            return issue_details
 
     else:
         print("  Could not guess series and issue from filename.")
@@ -495,6 +531,7 @@ def main():
     # Set up config directory and file
     config_dir = Path.home() / '.runarr'
     config_file = config_dir / 'config.json'
+    cache_file = config_dir / 'cache.json'
     
     # Create config directory if it doesn't exist
     config_dir.mkdir(exist_ok=True, mode=0o700)  # Create with secure permissions
@@ -507,6 +544,16 @@ def main():
                 config = json.load(f)
         except json.JSONDecodeError:
             print("Warning: Config file is corrupted. Creating a new one.")
+
+    # Load issue details cache
+    issue_details_cache = {}
+    if cache_file.exists():
+        try:
+            with open(cache_file, 'r') as f:
+                issue_details_cache = json.load(f)
+            print(f"Loaded {len(issue_details_cache)} items from cache.")
+        except json.JSONDecodeError:
+            print("Warning: Cache file is corrupted. Starting with an empty cache.")
     
     # Get API key from command line, environment, or config
     global COMICVINE_API_KEY
@@ -562,56 +609,62 @@ Get an API key from: https://comicvine.gamespot.com/api/
     series_cache = {}
     volume_issues_cache = {}
 
-    for folder, comics in comics_by_folder.items():
-        print(f"\nProcessing folder: {folder}")
-        new_series_folder_path = None
-        processed_comics = set()
+    try:
+        for folder, comics in comics_by_folder.items():
+            print(f"\nProcessing folder: {folder}")
+            new_series_folder_path = None
+            processed_comics = set()
 
-        # Convert .cbr to .cbz in the current folder before processing
-        if not args.dry_run:
-            cbr_files = [f for f in comics if f.lower().endswith('.cbr')]
-            for cbr_file in cbr_files:
-                convert_cbr_to_cbz(cbr_file)
-            # Refresh the file list after conversion
-            comics = [f.replace('.cbr', '.cbz') if f.lower().endswith('.cbr') else f for f in comics]
+            # Convert .cbr to .cbz in the current folder before processing
+            if not args.dry_run:
+                cbr_files = [f for f in comics if f.lower().endswith('.cbr')]
+                for cbr_file in cbr_files:
+                    convert_cbr_to_cbz(cbr_file)
+                # Refresh the file list after conversion
+                comics = [f.replace('.cbr', '.cbz') if f.lower().endswith('.cbr') else f for f in comics]
 
-        # Identify comic files and extra files
-        all_files_in_folder = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
-        comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith('.cbz')]  # Only look for .cbz files now
-        extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr')]
+            # Identify comic files and extra files
+            all_files_in_folder = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
+            comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith('.cbz')]  # Only look for .cbz files now
+            extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr')]
 
-        for comic_file in comic_files_in_folder:
-            print(f"Processing {comic_file}...")
-            cover_image = extract_cover_image(comic_file)
-            if cover_image:
-                print(f"  Successfully extracted cover image.")
-                issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache)
-                
-                if issue_details:
-                    # The organize_file function now returns the path to the *newly created* file
-                    new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run)
-                    if new_file_path:
-                        processed_comics.add(new_file_path)
-                        # Determine the new series folder from the first successfully processed comic
-                        if not new_series_folder_path:
-                            new_series_folder_path = os.path.dirname(new_file_path)
-            else:
-                print(f"  Could not extract cover image.")
+            for comic_file in comic_files_in_folder:
+                print(f"Processing {comic_file}...")
+                cover_image = extract_cover_image(comic_file)
+                if cover_image:
+                    print(f"  Successfully extracted cover image.")
+                    issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache)
+                    
+                    if issue_details:
+                        # The organize_file function now returns the path to the *newly created* file
+                        new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run)
+                        if new_file_path:
+                            processed_comics.add(new_file_path)
+                            # Determine the new series folder from the first successfully processed comic
+                            if not new_series_folder_path:
+                                new_series_folder_path = os.path.dirname(new_file_path)
+                else:
+                    print(f"  Could not extract cover image.")
 
-        # --- Extras and Cleanup Logic ---
-        if not args.dry_run and new_series_folder_path:
-            # Move any remaining files to an "Extras" folder
-            if extra_files:
-                extras_folder = os.path.join(new_series_folder_path, 'Extras')
-                print(f"  Moving {len(extra_files)} extra file(s) to: {extras_folder}")
-                os.makedirs(extras_folder, exist_ok=True)
-                for file_path in extra_files:
-                    shutil.move(file_path, os.path.join(extras_folder, os.path.basename(file_path)))
+            # --- Extras and Cleanup Logic ---
+            if not args.dry_run and new_series_folder_path:
+                # Move any remaining files to an "Extras" folder
+                if extra_files:
+                    extras_folder = os.path.join(new_series_folder_path, 'Extras')
+                    print(f"  Moving {len(extra_files)} extra file(s) to: {extras_folder}")
+                    os.makedirs(extras_folder, exist_ok=True)
+                    for file_path in extra_files:
+                        shutil.move(file_path, os.path.join(extras_folder, os.path.basename(file_path)))
 
-            # Remove the original folder if it's empty and not the same as the new one
-            if not os.listdir(folder) and folder != new_series_folder_path:
-                print(f"  Removing empty original folder: {folder}")
-                os.rmdir(folder)
+                # Remove the original folder if it's empty and not the same as the new one
+                if not os.listdir(folder) and folder != new_series_folder_path:
+                    print(f"  Removing empty original folder: {folder}")
+                    os.rmdir(folder)
+    finally:
+        # Save the updated cache to the file
+        with open(cache_file, 'w') as f:
+            json.dump(issue_details_cache, f, indent=2)
+        print(f"\nCache saved with {len(issue_details_cache)} items.")
 
 
 if __name__ == '__main__':
