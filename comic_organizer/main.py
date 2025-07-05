@@ -38,7 +38,7 @@ def rate_limited():
             time_since_last_call = current_time - LAST_API_CALL_TIME
             if time_since_last_call < MIN_SECONDS_BETWEEN_CALLS:
                 sleep_time = MIN_SECONDS_BETWEEN_CALLS - time_since_last_call
-                print(f"  Rate limit: sleeping for {sleep_time:.2f}s to maintain call frequency.")
+                print(f"{Style.DIM}  Rate limit: sleeping for {sleep_time:.2f}s to maintain call frequency.{Style.RESET_ALL}")
                 time.sleep(sleep_time)
 
             # 2. Enforce hourly limit
@@ -50,7 +50,7 @@ def rate_limited():
                 oldest_call = API_CALL_TIMESTAMPS[0]
                 wait_time = (oldest_call + 3600) - time.time()
                 if wait_time > 0:
-                    print(f"  Rate limit: hourly limit reached. Waiting for {wait_time:.2f}s.")
+                    print(f"{Fore.YELLOW}⚠️ Rate limit: hourly limit reached. Waiting for {wait_time:.2f}s.{Style.RESET_ALL}")
                     time.sleep(wait_time)
 
             # Make the API call
@@ -94,7 +94,7 @@ def extract_cover_image(comic_file_path):
             return Image.open(io.BytesIO(image_data))
 
     except Exception as e:
-        print(f"Error extracting cover from {comic_file_path}: {e}")
+        print(f"{Fore.RED}❌ Error extracting cover from {comic_file_path}: {e}{Style.RESET_ALL}")
     return None
 
 import re
@@ -143,15 +143,15 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
     # 5. Fallback to guessit if the new logic fails
     if not issue_number:
         guess = guessit.guessit(file_name)
-        print(f"  Guessit result: {guess}")
+        print(f"{Fore.CYAN}ℹ️ Guessing info from filename: {file_name}{Style.RESET_ALL}")
         issue_number = guess.get('issue') or guess.get('episode')
 
     if cover_image:
         cover_hash = imagehash.phash(cover_image)
-        print(f"  Cover hash: {cover_hash}")
+        print(f"{Fore.GREEN}✔ Cover hash: {cover_hash}{Style.RESET_ALL}")
 
     if series_title and issue_number:
-        print(f"  Guessed Series: {series_title}, Issue: {issue_number}")
+        print(f"{Fore.CYAN}ℹ️ Guessed Series: {series_title}, Issue: {issue_number}{Style.RESET_ALL}")
         
         # Step 1: Get the selected volume (cached per folder)
         selected_volume = series_cache.get(folder_path)
@@ -179,7 +179,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         # Step 3: Find the specific issue in the cached list
         issue_summary = issues_map.get(str(int(issue_number))) # Normalize issue number
         if not issue_summary:
-            print(f"  Could not find issue #{issue_number} in the series list.")
+            print(f"{Fore.YELLOW}⚠️ Issue #{issue_number} not found in the fetched issue list.{Style.RESET_ALL}")
             return None
 
         # Step 4: Check cache or fetch the detailed metadata for the specific issue
@@ -188,17 +188,17 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         cache_key = f"{volume_id}-{issue_num_str}"
 
         if cache_key in issue_details_cache:
-            print(f"  Found issue #{issue_num_str} in cache. Skipping API call.")
+            print(f"{Fore.GREEN}✔ Found issue #{issue_num_str} in cache. Skipping API call.{Style.RESET_ALL}")
             return issue_details_cache[cache_key]
         else:
             issue_details = fetch_issue_details(issue_summary, selected_volume)
             if issue_details:
-                print(f"  Adding issue #{issue_num_str} to cache.")
+                print(f"{Fore.GREEN}✔ Adding issue #{issue_num_str} to cache.{Style.RESET_ALL}")
                 issue_details_cache[cache_key] = issue_details
             return issue_details
 
     else:
-        print("  Could not guess series and issue from filename.")
+        print(f"{Fore.YELLOW}⚠️ Could not guess issue number from '{file_name}'. Skipping.{Style.RESET_ALL}")
         return None
 
 def handle_series_selection(volume_summary, output_dir, dry_run):
@@ -211,7 +211,7 @@ def handle_series_selection(volume_summary, output_dir, dry_run):
     series_json_path = os.path.join(new_series_folder, 'series.json')
 
     if os.path.exists(series_json_path):
-        print(f"  Found existing series.json at: {series_json_path}")
+        print(f"{Fore.GREEN}✔ Found existing series.json at: {series_json_path}{Style.RESET_ALL}")
         try:
             with open(series_json_path, 'r', encoding='utf-8') as f:
                 series_data = json.load(f)
@@ -227,13 +227,13 @@ def handle_series_selection(volume_summary, output_dir, dry_run):
                 'image': {'original_url': metadata.get('comic_image')}
             }
         except (json.JSONDecodeError, KeyError) as e:
-            print(f"  Warning: Could not read existing series.json ({e}). Will fetch from API.")
+            print(f"{Fore.RED}❌ Warning: Could not read existing series.json ({e}). Will fetch from API.{Style.RESET_ALL}")
 
-    print("  No series.json found. Fetching details from Comic Vine...")
+    print(f"{Fore.CYAN}ℹ️ No series.json found. Fetching details from Comic Vine...{Style.RESET_ALL}")
     volume_id = volume_summary.get('id')
     series_details = fetch_series_details(volume_id)
     if not series_details:
-        print("  Failed to fetch series details.")
+        print(f"{Fore.RED}❌ Failed to fetch issue details.{Style.RESET_ALL}")
         return None
 
     generate_and_write_series_json(series_details, new_series_folder, dry_run)
@@ -243,7 +243,7 @@ def handle_series_selection(volume_summary, output_dir, dry_run):
 @rate_limited()
 def fetch_series_details(volume_id):
     """Fetches comprehensive details for a given volume."""
-    print(f"  Fetching full details for volume ID: {volume_id}...")
+    print(f"{Fore.CYAN}ℹ️ Fetching full details for volume ID: {volume_id}...{Style.RESET_ALL}")
     url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
     params = {
         "api_key": COMICVINE_API_KEY,
@@ -256,7 +256,7 @@ def fetch_series_details(volume_id):
         response.raise_for_status()
         return response.json().get('results')
     except requests.exceptions.RequestException as e:
-        print(f"  Error fetching series details: {e}")
+        print(f"{Fore.RED}❌ Error fetching series details: {e}{Style.RESET_ALL}")
         return None
 
 def generate_and_write_series_json(series_details, series_folder, dry_run):
@@ -316,11 +316,11 @@ def generate_and_write_series_json(series_details, series_folder, dry_run):
             series_json_path = os.path.join(series_folder, 'series.json')
             with open(series_json_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=4, ensure_ascii=False)
-            print(f"  Successfully wrote series.json to: {series_folder}")
+            print(f"{Fore.GREEN}✔ Successfully wrote series.json to: {series_folder}{Style.RESET_ALL}")
         except IOError as e:
-            print(f"  Error writing series.json: {e}")
+            print(f"{Fore.RED}❌ Error writing series.json: {e}{Style.RESET_ALL}")
     else:
-        print(f"  [DRY RUN] Would write series.json to: {series_folder}")
+        print(f"{Fore.CYAN}ℹ️ [DRY RUN] Would write series.json to: {series_folder}{Style.RESET_ALL}")
 
 @rate_limited()
 def fetch_volume_issues(volume):
@@ -330,7 +330,7 @@ def fetch_volume_issues(volume):
     """
     volume_name = volume.get('name')
     volume_id = volume.get('id')
-    print(f"  Fetching all issues for volume '{volume_name}' (ID: {volume_id})...")
+    print(f"{Fore.CYAN}ℹ️ Fetching all issues for volume '{volume_name}' (ID: {volume_id})...{Style.RESET_ALL}")
 
     volume_url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
     params = { "api_key": COMICVINE_API_KEY, "format": "json", "field_list": "issues" }
@@ -343,11 +343,11 @@ def fetch_volume_issues(volume):
         
         # Create a map of issue number to issue summary for quick lookups
         issues_map = {issue['issue_number']: issue for issue in issues}
-        print(f"  Found and cached {len(issues_map)} issues for this volume.")
+        print(f"{Fore.GREEN}✔ Found and cached {len(issues_map)} issues for this volume.{Style.RESET_ALL}")
         return issues_map
 
     except requests.exceptions.RequestException as e:
-        print(f"  Error fetching volume issues: {e}")
+        print(f"{Fore.RED}❌ Error fetching volume issues: {e}{Style.RESET_ALL}")
         return {}
 
 @rate_limited()
@@ -357,7 +357,7 @@ def fetch_issue_details(issue_summary, volume):
     Rate limited to 1 request per X seconds.
     """
     issue_id = issue_summary.get('id')
-    print(f"  Fetching details for issue ID: {issue_id}...")
+    print(f"{Fore.CYAN}ℹ️ Fetching details for issue ID: {issue_id}...{Style.RESET_ALL}")
 
     issue_url = f"https://comicvine.gamespot.com/api/issue/4000-{issue_id}/"
     params = {
@@ -373,11 +373,11 @@ def fetch_issue_details(issue_summary, volume):
         issue_details = response.json().get('results')
         if issue_details:
             issue_details['volume'] = volume  # Inject the full volume info
-            print(f"  Found issue: {issue_details.get('name') or volume.get('name')} ({issue_details.get('id')})")
+            print(f"{Fore.GREEN}✔ Found issue: {issue_details.get('name') or volume.get('name')} ({issue_details.get('id')}){Style.RESET_ALL}")
             return issue_details
         return None
     except requests.exceptions.RequestException as e:
-        print(f"  Error fetching issue details: {e}")
+        print(f"{Fore.RED}❌ Error fetching issue details: {e}{Style.RESET_ALL}")
         return None
 
 
@@ -391,7 +391,7 @@ def select_series(series_title, series_year=None):
         print("  Comic Vine API key is not set. Skipping search.")
         return None
 
-    print(f"  Searching Comic Vine for series '{series_title}' (Year: {series_year or 'Any'})...")
+    print(f"{Fore.CYAN}ℹ️ Searching Comic Vine for series '{series_title}' (Year: {series_year or 'Any'})...{Style.RESET_ALL}")
 
     # Search for the volume (series)
     search_url = "https://comicvine.gamespot.com/api/search/"
@@ -411,35 +411,35 @@ def select_series(series_title, series_year=None):
 
         results = response.json().get('results', [])
         if not results:
-            print(f"  No results found for series '{series_title}'.")
+            print(f"{Fore.CYAN}ℹ️ No series found in cache for '{series_title}'. Searching ComicVine.{Style.RESET_ALL}")
             return None
 
         volume = None
         if len(results) > 1:
-            print("  Multiple series found. Please select one:")
+            print(f"{Fore.YELLOW}👉 Multiple series found. Please select one:{Style.RESET_ALL}")
             for i, res in enumerate(results):
-                print(f"    {i+1}: {res.get('name')} ({res.get('start_year')}) - {res.get('site_detail_url')}")
-            print(f"    {len(results)+1}: None of the above")
+                print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
+            print(f"    {Fore.CYAN}{len(results)+1}:{Style.RESET_ALL} None of the above")
 
             while True:
                 try:
-                    choice = int(input("  Enter your choice: "))
+                    choice = int(input(f"{Fore.YELLOW}  👉 Enter your choice: {Style.RESET_ALL}"))
                     if 1 <= choice <= len(results):
                         volume = results[choice-1]
                         break
                     elif choice == len(results) + 1:
                         return None
                     else:
-                        print("  Invalid choice. Please try again.")
+                        print(f"{Fore.RED}  ❌ Invalid choice. Please try again.{Style.RESET_ALL}")
                 except ValueError:
-                    print("  Invalid input. Please enter a number.")
+                    print(f"{Fore.RED}  ❌ Invalid input. Please enter a number.{Style.RESET_ALL}")
         elif results:
             volume = results[0]
         
         return volume
 
     except requests.exceptions.RequestException as e:
-        print(f"  Error searching Comic Vine: {e}")
+        print(f"{Fore.RED}❌ Error searching Comic Vine: {e}{Style.RESET_ALL}")
         return None
 
 
@@ -520,7 +520,7 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     issue_number_str = issue_details.get('issue_number')
     
     if not all([series_name, volume_year, issue_number_str]):
-        print("  Could not determine new file name. Missing required details.")
+        print(f"{Fore.RED}❌ Could not determine new file name. Missing required details.{Style.RESET_ALL}")
         return None
 
     # Format the issue number to be three digits with leading zeros
@@ -552,18 +552,18 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     comic_info_xml = generate_comic_info_xml(issue_details)
 
     if dry_run:
-        print(f"  [DRY RUN] Would move and rename to: {new_file_path}")
+        print(f"{Fore.CYAN}ℹ️ [DRY RUN] Would move and rename to: {new_file_path}{Style.RESET_ALL}")
         if comic_info_xml:
-            print("  [DRY RUN] Would generate and embed ComicInfo.xml.")
+            print(f"{Fore.CYAN}ℹ️ [DRY RUN] Would generate and embed ComicInfo.xml.{Style.RESET_ALL}")
     else:
-        print(f"  Moving and renaming to: {new_file_path}")
+        print(f"{Fore.CYAN}🚚 Moving and renaming to: {new_file_path}{Style.RESET_ALL}")
         os.makedirs(new_series_folder, exist_ok=True)
         
         # Before moving, check if the destination is the same as the source
         if original_path != new_file_path:
             shutil.move(original_path, new_file_path)
         else:
-            print("  Skipping move, file already organized.")
+            print(f"{Fore.YELLOW}⚠️ Skipping move, file already organized.{Style.RESET_ALL}")
 
         if comic_info_xml:
             if new_file_path.lower().endswith('.cbz'):
@@ -572,13 +572,13 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
                         # Check if ComicInfo.xml already exists
                         if 'ComicInfo.xml' not in zf.namelist():
                             zf.writestr('ComicInfo.xml', comic_info_xml)
-                            print("  Successfully embedded ComicInfo.xml.")
+                            print(f"{Fore.GREEN}✔ Successfully embedded ComicInfo.xml.{Style.RESET_ALL}")
                         else:
-                            print("  ComicInfo.xml already exists. Skipping embedding.")
+                            print(f"{Fore.YELLOW}⚠️ ComicInfo.xml already exists. Skipping embedding.{Style.RESET_ALL}")
                 except Exception as e:
-                    print(f"  Error embedding ComicInfo.xml: {e}")
+                    print(f"{Fore.RED}❌ Error embedding ComicInfo.xml: {e}{Style.RESET_ALL}")
             elif new_file_path.lower().endswith('.cbr'):
-                print("  Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).")
+                print(f"{Fore.YELLOW}⚠️ Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).{Style.RESET_ALL}")
     
     return new_file_path
 
@@ -606,7 +606,7 @@ def convert_cbr_to_cbz(cbr_path):
     temp_dir = tempfile.mkdtemp()
     
     try:
-        print(f"Converting {cbr_path} to .cbz...")
+        print(f"{Fore.CYAN}🔄 Converting {cbr_path} to .cbz...{Style.RESET_ALL}")
         with RarFile(cbr_path, 'r') as archive:
             archive.extractall(temp_dir)
         
@@ -622,12 +622,12 @@ def convert_cbr_to_cbz(cbr_path):
             if zf.testzip() is not None:
                 raise Exception("Failed to validate the new .cbz file.")
         
-        print(f"  Successfully converted to {cbz_path}")
+        print(f"{Fore.GREEN}✔ Successfully converted to {cbz_path}{Style.RESET_ALL}")
         os.remove(cbr_path)
         return cbz_path
 
     except Exception as e:
-        print(f"  Error converting {cbr_path}: {e}")
+        print(f"{Fore.RED}❌ Error converting {cbr_path}: {e}{Style.RESET_ALL}")
         # Clean up the partially created .cbz file if conversion fails
         if os.path.exists(cbz_path):
             os.remove(cbz_path)
@@ -672,7 +672,7 @@ def main():
             with open(config_file, 'r') as f:
                 config = json.load(f)
         except json.JSONDecodeError:
-            print("Warning: Config file is corrupted. Creating a new one.")
+            print(f"{Fore.YELLOW}⚠️ Warning: Config file is corrupted. Creating a new one.{Style.RESET_ALL}")
 
     # Load issue details cache
     issue_details_cache = {}
@@ -680,9 +680,9 @@ def main():
         try:
             with open(cache_file, 'r') as f:
                 issue_details_cache = json.load(f)
-            print(f"Loaded {len(issue_details_cache)} items from cache.")
+            print(f"{Fore.CYAN}ℹ️ Loaded {len(issue_details_cache)} items from cache.{Style.RESET_ALL}")
         except json.JSONDecodeError:
-            print("Warning: Cache file is corrupted. Starting with an empty cache.")
+            print(f"{Fore.YELLOW}⚠️ Warning: Cache file is corrupted. Starting with an empty cache.{Style.RESET_ALL}")
     
     # Get API key from command line, environment, or config
     global COMICVINE_API_KEY
@@ -691,27 +691,26 @@ def main():
         config['comicvine_api_key'] = args.comicvine_api_key
         with open(config_file, 'w') as f:
             json.dump(config, f)
-        print("Comic Vine API key has been saved.")
+        print(f"{Fore.GREEN}✔ Comic Vine API key has been saved.{Style.RESET_ALL}")
         COMICVINE_API_KEY = args.comicvine_api_key
     else:
         # Try to get the API key from config or environment
         COMICVINE_API_KEY = config.get('comicvine_api_key') or os.getenv('COMICVINE_API_KEY')
     
     if not COMICVINE_API_KEY:
-        print("""
-Error: No Comic Vine API key found.
-Please provide your API key using one of these methods:
-1. Run with --comicvine-api-key "your_api_key_here"
-2. Set the COMICVINE_API_KEY environment variable
+        print(f"""{Fore.RED}❌ Error: No Comic Vine API key found.
+{Style.RESET_ALL}Please provide your API key using one of these methods:
+1. Run with {Style.BRIGHT}--comicvine-api-key "your_api_key_here"{Style.RESET_ALL}
+2. Set the {Style.BRIGHT}COMICVINE_API_KEY{Style.RESET_ALL} environment variable
 
-Get an API key from: https://comicvine.gamespot.com/api/
+Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_ALL}
 """)
         return
 
     # Determine input_dir
     input_dir = args.input_dir if args.input_dir else os.getcwd()
     if args.input_dir is None:
-        print(f"No input directory specified. Using current directory: {input_dir}")
+        print(f"{Style.DIM}No input directory specified. Using current directory: {input_dir}{Style.RESET_ALL}")
 
     # API key is now loaded at the beginning of main()
 
@@ -722,7 +721,7 @@ Get an API key from: https://comicvine.gamespot.com/api/
     if args.series_folder:
         target_folder = os.path.join(input_dir, args.series_folder)
         if not os.path.isdir(target_folder):
-            print(f"Error: The specified series folder does not exist: {target_folder}")
+            print(f"{Fore.RED}❌ Error: The specified series folder does not exist: {target_folder}{Style.RESET_ALL}")
             return
         comics_by_folder = {target_folder: [os.path.join(target_folder, f) for f in os.listdir(target_folder) if f.lower().endswith(('.cbz', '.cbr'))]}
     else:
@@ -740,7 +739,7 @@ Get an API key from: https://comicvine.gamespot.com/api/
 
     try:
         for folder, comics in comics_by_folder.items():
-            print(f"\nProcessing folder: {folder}")
+            print(f"\n{Style.BRIGHT}{Fore.MAGENTA}🗂️ Processing folder: {folder}{Style.RESET_ALL}")
             new_series_folder_path = None
             processed_comics = set()
 
@@ -758,10 +757,10 @@ Get an API key from: https://comicvine.gamespot.com/api/
             extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr')]
 
             for comic_file in comic_files_in_folder:
-                print(f"Processing {comic_file}...")
+                print(f"  {Fore.CYAN}Processing {os.path.basename(comic_file)}...{Style.RESET_ALL}")
                 cover_image = extract_cover_image(comic_file)
                 if cover_image:
-                    print(f"  Successfully extracted cover image.")
+                    print(f"  {Fore.GREEN}✔ Successfully extracted cover image.{Style.RESET_ALL}")
                     issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run)
                     
                     if issue_details:
@@ -773,27 +772,27 @@ Get an API key from: https://comicvine.gamespot.com/api/
                             if not new_series_folder_path:
                                 new_series_folder_path = os.path.dirname(new_file_path)
                 else:
-                    print(f"  Could not extract cover image.")
+                    print(f"  {Fore.RED}❌ Could not extract cover image.{Style.RESET_ALL}")
 
             # --- Extras and Cleanup Logic ---
             if not args.dry_run and new_series_folder_path:
                 # Move any remaining files to an "Extras" folder
                 if extra_files:
                     extras_folder = os.path.join(new_series_folder_path, 'Extras')
-                    print(f"  Moving {len(extra_files)} extra file(s) to: {extras_folder}")
+                    print(f"  {Fore.CYAN}📦 Moving {len(extra_files)} extra file(s) to: {extras_folder}{Style.RESET_ALL}")
                     os.makedirs(extras_folder, exist_ok=True)
                     for file_path in extra_files:
                         shutil.move(file_path, os.path.join(extras_folder, os.path.basename(file_path)))
 
                 # Remove the original folder if it's empty and not the same as the new one
                 if not os.listdir(folder) and folder != new_series_folder_path:
-                    print(f"  Removing empty original folder: {folder}")
+                    print(f"  {Fore.CYAN}🗑️ Removing empty original folder: {folder}{Style.RESET_ALL}")
                     os.rmdir(folder)
     finally:
         # Save the updated cache to the file
         with open(cache_file, 'w') as f:
             json.dump(issue_details_cache, f, indent=2)
-        print(f"\nCache saved with {len(issue_details_cache)} items.")
+        print(f"\n{Fore.GREEN}✔ Cache saved with {len(issue_details_cache)} items.{Style.RESET_ALL}")
 
 
 if __name__ == '__main__':
