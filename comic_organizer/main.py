@@ -16,12 +16,12 @@ import time
 from pathlib import Path
 from functools import wraps
 
-# Rate limiting for Comic Vine API (1.5 seconds between requests)
+# Rate limiting for Comic Vine API (X seconds between requests)
 COMICVINE_API_KEY = ""
 LAST_API_CALL_TIME = 0
 
 def rate_limited():
-    """Decorator to ensure at least 1.5 seconds between Comic Vine API calls."""
+    """Decorator to ensure at least X seconds between Comic Vine API calls."""
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
@@ -29,8 +29,8 @@ def rate_limited():
             current_time = time.time()
             time_since_last_call = current_time - LAST_API_CALL_TIME
             
-            if time_since_last_call < 1.5:
-                sleep_time = 1.5 - time_since_last_call
+            if time_since_last_call < 4.0:
+                sleep_time = 4.0 - time_since_last_call
                 time.sleep(sleep_time)
                 
             result = func(*args, **kwargs)
@@ -163,7 +163,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
 def fetch_volume_issues(volume):
     """
     Fetches all issues for a given volume and returns a map of issue numbers to issue summaries.
-    Rate limited to 1 request per 1.5 seconds.
+    Rate limited to 1 request per X seconds.
     """
     volume_name = volume.get('name')
     volume_id = volume.get('id')
@@ -191,7 +191,7 @@ def fetch_volume_issues(volume):
 def fetch_issue_details(issue_summary, volume):
     """
     Fetches the full details for a single issue.
-    Rate limited to 1 request per 1.5 seconds.
+    Rate limited to 1 request per X seconds.
     """
     issue_id = issue_summary.get('id')
     print(f"  Fetching details for issue ID: {issue_id}...")
@@ -222,7 +222,7 @@ def fetch_issue_details(issue_summary, volume):
 def select_series(series_title, series_year=None):
     """
     Searches for a series and prompts the user to select from the results.
-    Rate limited to 1 request per 1.5 seconds.
+    Rate limited to 1 request per X seconds.
     """
     if not COMICVINE_API_KEY:
         print("  Comic Vine API key is not set. Skipping search.")
