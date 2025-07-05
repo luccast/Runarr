@@ -6,3 +6,5 @@ __pycache__/
 /comic_organizer.egg-info/
 collect-metadata.md
 comic-info-example.md
+/build/
+/UNKNOWN.egg-info/
