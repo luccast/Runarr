@@ -28,3 +28,6 @@ dependencies = [
 
 [project.scripts]
 runarr = "comic_organizer.main:main"
+
+[tool.setuptools]
+packages = ["comic_organizer"]
