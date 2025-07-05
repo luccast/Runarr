@@ -11,7 +11,7 @@
 A tool to organize comic book runs in archive (CBZ/CBR) format by fetching metadata from Comic Vine and renaming/moving files accordingly.
 
 ## Features
-- Organizes `.cbz` and `.cbr` comic files into structured folders
+- Organizes `.cbz` and `.cbr` comic files into structured folders optmized for use with Mylar3, Kavita, Komga.
 - Fetches metadata from Comic Vine
 - Select from matched series with link to Comic Vine Series
 - Renames files and folders based on series, issue, and date
