@@ -98,7 +98,7 @@ def extract_cover_image(comic_file_path):
 
 import re
 
-def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache):
+def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
     folder_path = os.path.dirname(comic_file_path)
@@ -155,8 +155,13 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         # Step 1: Get the selected volume (cached per folder)
         selected_volume = series_cache.get(folder_path)
         if selected_volume is None:
-            selected_volume = select_series(series_title, series_year)
-            series_cache[folder_path] = selected_volume
+            volume_summary = select_series(series_title, series_year)
+            if not volume_summary:
+                series_cache[folder_path] = None  # Cache failure
+                return None
+            
+            selected_volume = handle_series_selection(volume_summary, output_dir, dry_run)
+            series_cache[folder_path] = selected_volume  # Cache the detailed volume
         
         if not selected_volume:
             return None
@@ -194,6 +199,127 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
     else:
         print("  Could not guess series and issue from filename.")
         return None
+
+def handle_series_selection(volume_summary, output_dir, dry_run):
+    """
+    Handles logic for creating or loading a series.json file after a series is selected.
+    """
+    series_name = sanitize_filename(volume_summary.get('name'))
+    volume_year = volume_summary.get('start_year')
+    new_series_folder = os.path.join(output_dir, f"{series_name} ({volume_year})")
+    series_json_path = os.path.join(new_series_folder, 'series.json')
+
+    if os.path.exists(series_json_path):
+        print(f"  Found existing series.json at: {series_json_path}")
+        try:
+            with open(series_json_path, 'r', encoding='utf-8') as f:
+                series_data = json.load(f)
+            
+            metadata = series_data.get('metadata', {})
+            return {
+                'id': metadata.get('comicid'),
+                'name': metadata.get('name'),
+                'start_year': str(metadata.get('year')),
+                'publisher': {'name': metadata.get('publisher')},
+                'description': metadata.get('description_formatted'),
+                'count_of_issues': metadata.get('total_issues'),
+                'image': {'original_url': metadata.get('comic_image')}
+            }
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"  Warning: Could not read existing series.json ({e}). Will fetch from API.")
+
+    print("  No series.json found. Fetching details from Comic Vine...")
+    volume_id = volume_summary.get('id')
+    series_details = fetch_series_details(volume_id)
+    if not series_details:
+        print("  Failed to fetch series details.")
+        return None
+
+    generate_and_write_series_json(series_details, new_series_folder, dry_run)
+    return series_details
+
+
+@rate_limited()
+def fetch_series_details(volume_id):
+    """Fetches comprehensive details for a given volume."""
+    print(f"  Fetching full details for volume ID: {volume_id}...")
+    url = f"https://comicvine.gamespot.com/api/volume/4050-{volume_id}/"
+    params = {
+        "api_key": COMICVINE_API_KEY,
+        "format": "json",
+        "field_list": "id,name,start_year,publisher,description,count_of_issues,image,last_issue,first_issue"
+    }
+    headers = {"User-Agent": "ComicOrganizer/1.0"}
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        return response.json().get('results')
+    except requests.exceptions.RequestException as e:
+        print(f"  Error fetching series details: {e}")
+        return None
+
+def generate_and_write_series_json(series_details, series_folder, dry_run):
+    """Generates and writes the series.json file."""
+    last_issue = series_details.get('last_issue')
+    series_status = 'Ended'
+    if last_issue and last_issue.get('cover_date'):
+        try:
+            last_date = datetime.strptime(last_issue['cover_date'], '%Y-%m-%d').date()
+            if (datetime.now().date() - last_date).days < 90:
+                series_status = 'Continuing'
+        except (ValueError, TypeError):
+            pass
+    elif series_details.get('count_of_issues', 0) == 0:
+        series_status = 'Continuing'
+
+    pub_run = series_details.get('start_year', '')
+    if last_issue and last_issue.get('cover_date'):
+        try:
+            last_year = datetime.strptime(last_issue['cover_date'], '%Y-%m-%d').year
+            if str(last_year) != pub_run:
+                pub_run += f" - {last_year}"
+        except (ValueError, TypeError):
+            pass
+
+    booktype = 'Standard'
+    if series_details.get('count_of_issues') == 1:
+        booktype = 'One-Shot'
+
+    description = series_details.get('description', '') or ''
+    
+    metadata = {
+        'version': '1.0.2',
+        'metadata': {
+            'type': 'comicSeries',
+            'publisher': series_details.get('publisher', {}).get('name'),
+            'imprint': series_details.get('publisher', {}).get('name'),
+            'name': series_details.get('name'),
+            'comicid': series_details.get('id'),
+            'year': int(series_details['start_year']) if series_details.get('start_year') else None,
+            'description_text': re.sub(r'<[^>]+>', '', description),
+            'description_formatted': description,
+            'volume': None,
+            'booktype': booktype,
+            'age_rating': None,
+            'collects': None,
+            'comic_image': series_details.get('image', {}).get('original_url'),
+            'total_issues': series_details.get('count_of_issues'),
+            'publication_run': pub_run,
+            'status': series_status
+        }
+    }
+
+    if not dry_run:
+        try:
+            os.makedirs(series_folder, exist_ok=True)
+            series_json_path = os.path.join(series_folder, 'series.json')
+            with open(series_json_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=4, ensure_ascii=False)
+            print(f"  Successfully wrote series.json to: {series_folder}")
+        except IOError as e:
+            print(f"  Error writing series.json: {e}")
+    else:
+        print(f"  [DRY RUN] Would write series.json to: {series_folder}")
 
 @rate_limited()
 def fetch_volume_issues(volume):
@@ -633,7 +759,7 @@ Get an API key from: https://comicvine.gamespot.com/api/
                 cover_image = extract_cover_image(comic_file)
                 if cover_image:
                     print(f"  Successfully extracted cover image.")
-                    issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache)
+                    issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run)
                     
                     if issue_details:
                         # The organize_file function now returns the path to the *newly created* file
