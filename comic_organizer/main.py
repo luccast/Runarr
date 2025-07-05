@@ -1,4 +1,5 @@
 import argparse
+from colorama import Fore, Style, init
 import os
 from dotenv import load_dotenv
 import guessit
@@ -644,14 +645,16 @@ def main():
     parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
     parser.add_argument('--comicvine-api-key', help='Set or update your Comic Vine API key. This will be saved for future use.')
+    init(autoreset=True)
     args = parser.parse_args()
 
-    print("""
- ______     __  __     __   __     ______     ______     ______    
-/\\  == \\   /\\ \\/\\ \\   /\\ \"-.\\ \\   /\\  __ \\   /\\  == \\   /\\  == \\   \n\\ \\  __<   \\ \\ \\_\\ \\  \\ \\ \\-.  \\  \\ \\  __ \\  \\ \\  __<   \\ \\  __<   
- \\\\ \\_\\ \\_\\  \\ \\\\_____\\  \\ \\_\\"\\_\\  \\ \\_\\ \\_\\  \\ \\_\\ \\_\\  \\ \\_\\ \\_\\ 
-  \\/_/ /_/   \\/_____/   \\/_/ \\/_/   \\/_/\\/_/   \\/_/ /_/   \\/_/ /_/ 
-                                                                   
+    print(f"""
+{Fore.RED} ______     {Fore.YELLOW}__  __     {Fore.GREEN}__   __     {Fore.CYAN}______     {Fore.BLUE}______     {Fore.MAGENTA}______    
+{Fore.RED}/\  == \   {Fore.YELLOW}/\ \/\ \   {Fore.GREEN}/\ \"-.\ \   {Fore.CYAN}/\  __ \   {Fore.BLUE}/\  == \   {Fore.MAGENTA}/\  == \   
+{Fore.RED}\\ \  __<   {Fore.YELLOW}\ \ \_\ \  {Fore.GREEN}\ \ \-.  \  {Fore.CYAN}\ \  __ \  {Fore.BLUE}\ \  __<   {Fore.MAGENTA}\ \  __<   
+{Fore.RED} \\ \_\ \_\  {Fore.YELLOW}\ \\_____\  {Fore.GREEN}\ \_\\" \_\  {Fore.CYAN}\ \_\ \_\  {Fore.BLUE}\ \_\ \_\  {Fore.MAGENTA}\ \_\ \_\ 
+{Fore.RED}  \/_/ /_/   {Fore.YELLOW}\/_____/   {Fore.GREEN}\/_/ \/_/   {Fore.CYAN}\/_/\/_/   {Fore.BLUE}\/_/ /_/   {Fore.MAGENTA}\/_/ /_/ 
+{Style.RESET_ALL}                                                                    
 """)
     
     # Set up config directory and file

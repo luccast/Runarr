@@ -24,6 +24,7 @@ dependencies = [
     "guessit",
     "Pillow",
     "python-dotenv",
+    "colorama",
 ]
 
 [project.scripts]
