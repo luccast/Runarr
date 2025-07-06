@@ -644,6 +644,8 @@ def main():
     parser.add_argument('output_dir', nargs='?', default=None, help='(Optional) The directory to store the organized files. If not provided, organizes in-place.')
     parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
+    parser.add_argument('--force-refresh', action='store_true', help='Force a refresh of cached data for a specific series folder.')
+    parser.add_argument('-y', '--yes', action='store_true', help='Automatically answer yes to all prompts and skip confirmations.')
     parser.add_argument('--comicvine-api-key', help='Set or update your Comic Vine API key. This will be saved for future use.')
     init(autoreset=True)
     args = parser.parse_args()
@@ -740,6 +742,14 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
     try:
         for folder, comics in comics_by_folder.items():
             print(f"\n{Style.BRIGHT}{Fore.MAGENTA} 🗂️ Processing folder: {folder}{Style.RESET_ALL}")
+
+            # Confirm with the user before processing
+            if not args.yes:
+                confirm = input(f"{Fore.YELLOW} 👉 Do you want to process this folder? (y/n): {Style.RESET_ALL}").lower().strip()
+                if confirm not in ['y', 'yes']:
+                    print(f"{Fore.CYAN} 🏃‍➡️ Skipping folder: {folder}{Style.RESET_ALL}")
+                    continue
+            
             new_series_folder_path = None
             processed_comics = set()
 
