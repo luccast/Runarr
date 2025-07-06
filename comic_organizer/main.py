@@ -16,6 +16,8 @@ import json
 import time
 from pathlib import Path
 from functools import wraps
+from comic_organizer.comic_info import generate_comic_info_xml
+from comic_organizer.series_info import generate_series_data, write_series_json
 
 # Rate limiting for Comic Vine API
 COMICVINE_API_KEY = ""
@@ -236,7 +238,9 @@ def handle_series_selection(volume_summary, output_dir, dry_run):
         print(f"{Fore.RED} ✗ Failed to fetch issue details.{Style.RESET_ALL}")
         return None
 
-    generate_and_write_series_json(series_details, new_series_folder, dry_run)
+    series_data = generate_series_data(series_details)
+    if series_data:
+        write_series_json(series_data, new_series_folder, dry_run)
     return series_details
 
 
@@ -248,7 +252,7 @@ def fetch_series_details(volume_id):
     params = {
         "api_key": COMICVINE_API_KEY,
         "format": "json",
-        "field_list": "id,name,start_year,publisher,description,count_of_issues,image,last_issue,first_issue"
+        "field_list": "id,name,start_year,publisher,description,count_of_issues,image,last_issue,first_issue,characters,teams,locations,concepts"
     }
     headers = {"User-Agent": "ComicOrganizer/1.0"}
     try:
@@ -259,68 +263,7 @@ def fetch_series_details(volume_id):
         print(f"{Fore.RED} ✗ Error fetching series details: {e}{Style.RESET_ALL}")
         return None
 
-def generate_and_write_series_json(series_details, series_folder, dry_run):
-    """Generates and writes the series.json file."""
-    last_issue = series_details.get('last_issue')
-    series_status = 'Ended'
-    if last_issue and last_issue.get('cover_date'):
-        try:
-            last_date = datetime.strptime(last_issue['cover_date'], '%Y-%m-%d').date()
-            if (datetime.now().date() - last_date).days < 90:
-                series_status = 'Continuing'
-        except (ValueError, TypeError):
-            pass
-    elif series_details.get('count_of_issues', 0) == 0:
-        series_status = 'Continuing'
 
-    pub_run = series_details.get('start_year', '')
-    if last_issue and last_issue.get('cover_date'):
-        try:
-            last_year = datetime.strptime(last_issue['cover_date'], '%Y-%m-%d').year
-            if str(last_year) != pub_run:
-                pub_run += f" - {last_year}"
-        except (ValueError, TypeError):
-            pass
-
-    booktype = 'Standard'
-    if series_details.get('count_of_issues') == 1:
-        booktype = 'One-Shot'
-
-    description = series_details.get('description', '') or ''
-    
-    metadata = {
-        'version': '1.0.2',
-        'metadata': {
-            'type': 'comicSeries',
-            'publisher': series_details.get('publisher', {}).get('name'),
-            'imprint': series_details.get('publisher', {}).get('name'),
-            'name': series_details.get('name'),
-            'comicid': series_details.get('id'),
-            'year': int(series_details['start_year']) if series_details.get('start_year') else None,
-            'description_text': re.sub(r'<[^>]+>', '', description),
-            'description_formatted': description,
-            'volume': None,
-            'booktype': booktype,
-            'age_rating': None,
-            'collects': None,
-            'comic_image': series_details.get('image', {}).get('original_url'),
-            'total_issues': series_details.get('count_of_issues'),
-            'publication_run': pub_run,
-            'status': series_status
-        }
-    }
-
-    if not dry_run:
-        try:
-            os.makedirs(series_folder, exist_ok=True)
-            series_json_path = os.path.join(series_folder, 'series.json')
-            with open(series_json_path, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=4, ensure_ascii=False)
-            print(f"{Fore.GREEN}✔ Successfully wrote series.json to: {series_folder}{Style.RESET_ALL}")
-        except IOError as e:
-            print(f"{Fore.RED} ✗ Error writing series.json: {e}{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would write series.json to: {series_folder}{Style.RESET_ALL}")
 
 @rate_limited()
 def fetch_volume_issues(volume):
@@ -363,7 +306,7 @@ def fetch_issue_details(issue_summary, volume):
     params = {
         "api_key": COMICVINE_API_KEY,
         "format": "json",
-        "field_list": "name,issue_number,description,cover_date,volume,person_credits,character_credits,team_credits,location_credits,site_detail_url"
+        "field_list": "name,issue_number,description,cover_date,release_date,volume,person_credits,character_credits,team_credits,location_credits,story_arc_credits,concept_credits,site_detail_url"
     }
     headers = { "User-Agent": "ComicOrganizer/1.0" }
 
@@ -444,66 +387,7 @@ def select_series(series_title, series_year=None):
 
 
 
-def generate_comic_info_xml(issue_details):
-    """
-    Generates the ComicInfo.xml content as a string.
-    """
-    if not issue_details:
-        return None
 
-    volume_info = issue_details.get('volume', {})
-    
-    # Create the root element
-    root = ET.Element('ComicInfo', {
-        'xmlns:xsi': 'http://www.w3.org/2001/XMLSchema-instance',
-        'xmlns:xsd': 'http://www.w3.org/2001/XMLSchema'
-    })
-
-    # Helper to add a sub-element if the value exists
-    def add_element(parent, tag, value):
-        if value:
-            el = ET.SubElement(parent, tag)
-            el.text = str(value)
-
-    add_element(root, 'Title', issue_details.get('name'))
-    add_element(root, 'Series', volume_info.get('name'))
-    add_element(root, 'Number', issue_details.get('issue_number'))
-    add_element(root, 'Volume', volume_info.get('start_year'))
-    add_element(root, 'Publisher', volume_info.get('publisher', {}).get('name'))
-    add_element(root, 'Web', issue_details.get('site_detail_url'))
-
-    # Add summary, handling potential HTML
-    summary = issue_details.get('description')
-    if summary:
-        summary_el = ET.SubElement(root, 'Summary')
-        summary_el.text = summary  # The XML library handles escaping
-
-    # Add date fields
-    cover_date_str = issue_details.get('cover_date')
-    if cover_date_str:
-        try:
-            cover_date = datetime.strptime(cover_date_str, '%Y-%m-%d')
-            add_element(root, 'Year', cover_date.year)
-            add_element(root, 'Month', cover_date.month)
-            add_element(root, 'Day', cover_date.day)
-        except (ValueError, TypeError):
-            pass
-
-    # Add credits
-    add_element(root, 'Writer', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'writer' in p['role'].lower()]))
-    add_element(root, 'Penciller', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'penciller' in p['role'].lower()]))
-    add_element(root, 'Inker', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'inker' in p['role'].lower()]))
-    add_element(root, 'Colorist', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'colorist' in p['role'].lower()]))
-    add_element(root, 'Letterer', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'letterer' in p['role'].lower()]))
-    add_element(root, 'CoverArtist', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'cover' in p['role'].lower()]))
-    add_element(root, 'Editor', ', '.join([p['name'] for p in issue_details.get('person_credits', []) if 'editor' in p['role'].lower()]))
-    
-    add_element(root, 'Characters', ', '.join([c['name'] for c in issue_details.get('character_credits', [])]))
-    add_element(root, 'Teams', ', '.join([t['name'] for t in issue_details.get('team_credits', [])]))
-    add_element(root, 'Locations', ', '.join([l['name'] for l in issue_details.get('location_credits', [])]))
-
-    # Convert the XML tree to a string
-    return ET.tostring(root, encoding='unicode')
 
 
 def organize_file(original_path, issue_details, output_dir, dry_run=False):
