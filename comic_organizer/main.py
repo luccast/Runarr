@@ -99,7 +99,7 @@ def extract_cover_image(comic_file_path):
 
 import re
 
-def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run):
+def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run, version_str=None):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
     folder_path = os.path.dirname(comic_file_path)
@@ -161,7 +161,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
                 series_cache[folder_path] = None  # Cache failure
                 return None
             
-            selected_volume = handle_series_selection(volume_summary, output_dir, dry_run)
+            selected_volume = handle_series_selection(volume_summary, output_dir, dry_run, version_str)
             series_cache[folder_path] = selected_volume  # Cache the detailed volume
         
         if not selected_volume:
@@ -201,13 +201,17 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         print(f"{Fore.YELLOW} ⚠️ Could not guess issue number from '{file_name}'. Skipping.{Style.RESET_ALL}")
         return None
 
-def handle_series_selection(volume_summary, output_dir, dry_run):
+def handle_series_selection(volume_summary, output_dir, dry_run, version_str=None):
     """
     Handles logic for creating or loading a series.json file after a series is selected.
     """
     series_name = sanitize_filename(volume_summary.get('name'))
     volume_year = volume_summary.get('start_year')
-    new_series_folder = os.path.join(output_dir, f"{series_name} ({volume_year})")
+    
+    # Add the version string to the folder name if it exists
+    folder_version_str = f" {version_str}" if version_str else ""
+    new_series_folder = os.path.join(output_dir, f"{series_name}{folder_version_str} ({volume_year})")
+    
     series_json_path = os.path.join(new_series_folder, 'series.json')
 
     if os.path.exists(series_json_path):
@@ -506,7 +510,7 @@ def generate_comic_info_xml(issue_details):
     return ET.tostring(root, encoding='unicode')
 
 
-def organize_file(original_path, issue_details, output_dir, dry_run=False):
+def organize_file(original_path, issue_details, output_dir, dry_run=False, version_str=None):
     if not issue_details:
         return None
 
@@ -544,8 +548,9 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False):
     _, extension = os.path.splitext(original_path)
     new_file_name = f"{series_name} V{volume_year}{annual_str} #{issue_number_padded} ({date_formatted}){extension}"
     
-    # Construct the new folder path
-    new_series_folder = os.path.join(output_dir, f"{series_name} ({volume_year})")
+    # Construct the new folder path, including the version string if available
+    folder_version_str = f" {version_str}" if version_str else ""
+    new_series_folder = os.path.join(output_dir, f"{series_name}{folder_version_str} ({volume_year})")
     new_file_path = os.path.join(new_series_folder, new_file_name)
 
     # Generate ComicInfo.xml
@@ -745,6 +750,11 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
         for folder, comics in comics_by_folder.items():
             print(f"\n{Style.BRIGHT}{Fore.MAGENTA} 🗂️ Processing folder: {folder}{Style.RESET_ALL}")
 
+            # Extract version from folder name (e.g., "v1", "v2")
+            folder_name = os.path.basename(folder)
+            version_match = re.search(r'\b(v\d+)\b', folder_name, re.IGNORECASE)
+            version_str = version_match.group(1) if version_match else None
+
             # Confirm with the user before processing
             if not args.yes:
                 confirm = input(f"{Fore.YELLOW} 👉 Do you want to process this folder? (y/n): {Style.RESET_ALL}").lower().strip()
@@ -773,11 +783,11 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
                 cover_image = extract_cover_image(comic_file)
                 if cover_image:
                     print(f"  {Fore.GREEN} ✔ Successfully extracted cover image.{Style.RESET_ALL}")
-                    issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run)
+                    issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
                     
                     if issue_details:
                         # The organize_file function now returns the path to the *newly created* file
-                        new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run)
+                        new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str)
                         if new_file_path:
                             processed_comics.add(new_file_path)
                             # Determine the new series folder from the first successfully processed comic
