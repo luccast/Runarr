@@ -99,6 +99,32 @@ def extract_cover_image(comic_file_path):
         print(f"{Fore.RED} ✗ Error extracting cover from {comic_file_path}: {e}{Style.RESET_ALL}")
     return None
 
+def load_volume_from_series_json(folder_path):
+    """
+    Loads volume information from a series.json file if it exists in the folder.
+    """
+    series_json_path = os.path.join(folder_path, 'series.json')
+    if os.path.exists(series_json_path):
+        print(f"{Fore.GREEN}✔ Found existing series.json at: {series_json_path}{Style.RESET_ALL}")
+        try:
+            with open(series_json_path, 'r', encoding='utf-8') as f:
+                series_data = json.load(f)
+            
+            metadata = series_data.get('metadata', {})
+            # Reconstruct the volume summary from the series.json
+            return {
+                'id': metadata.get('comicid'),
+                'name': metadata.get('name'),
+                'start_year': str(metadata.get('year')),
+                'publisher': {'name': metadata.get('publisher')},
+                'description': metadata.get('description_formatted'),
+                'count_of_issues': metadata.get('total_issues'),
+                'image': {'original_url': metadata.get('comic_image')}
+            }
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"{Fore.RED} ✗ Warning: Could not read existing series.json ({e}). Will fetch from API.{Style.RESET_ALL}")
+    return None
+
 import re
 
 def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run, version_str=None):
@@ -158,12 +184,18 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         # Step 1: Get the selected volume (cached per folder)
         selected_volume = series_cache.get(folder_path)
         if selected_volume is None:
-            volume_summary = select_series(series_title, series_year)
-            if not volume_summary:
-                series_cache[folder_path] = None  # Cache failure
-                return None
+            # Try to load from existing series.json first
+            selected_volume = load_volume_from_series_json(folder_path)
             
-            selected_volume = handle_series_selection(volume_summary, output_dir, dry_run, version_str)
+            if not selected_volume:
+                # If not found or failed to load, then go to the API
+                volume_summary = select_series(series_title, series_year)
+                if not volume_summary:
+                    series_cache[folder_path] = None  # Cache failure
+                    return None
+                
+                selected_volume = handle_series_selection(volume_summary, output_dir, dry_run, version_str)
+            
             series_cache[folder_path] = selected_volume  # Cache the detailed volume
         
         if not selected_volume:
