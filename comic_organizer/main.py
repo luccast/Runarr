@@ -656,7 +656,8 @@ def main():
 {Fore.RED}\\ \  __<   {Fore.YELLOW}\ \ \_\ \  {Fore.GREEN}\ \ \-.  \  {Fore.CYAN}\ \  __ \  {Fore.BLUE}\ \  __<   {Fore.MAGENTA}\ \  __<   
 {Fore.RED} \\ \_\ \_\  {Fore.YELLOW}\ \\_____\  {Fore.GREEN}\ \_\\" \_\  {Fore.CYAN}\ \_\ \_\  {Fore.BLUE}\ \_\ \_\  {Fore.MAGENTA}\ \_\ \_\ 
 {Fore.RED}  \/_/ /_/   {Fore.YELLOW}\/_____/   {Fore.GREEN}\/_/ \/_/   {Fore.CYAN}\/_/\/_/   {Fore.BLUE}\/_/ /_/   {Fore.MAGENTA}\/_/ /_/ 
-              @luccasveg 2025 🏃‍➡️ https://github.com/luccast/Runarr
+
+{Fore.CYAN} @luccasveg 2025 🏃‍➡️ https://github.com/luccast/Runarr
 {Style.RESET_ALL}                                                                    
 """)
     
