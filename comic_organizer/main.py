@@ -267,11 +267,18 @@ def handle_series_selection(volume_summary, output_dir, dry_run, version_str=Non
         except (json.JSONDecodeError, KeyError) as e:
             print(f"{Fore.RED} ✗ Warning: Could not read existing series.json ({e}). Will fetch from API.{Style.RESET_ALL}")
 
-    print(f"{Fore.CYAN}🏃‍➡️ No series.json found. Fetching details from Comic Vine...{Style.RESET_ALL}")
-    volume_id = volume_summary.get('id')
-    series_details = fetch_series_details(volume_id)
+    # Check if we already have full details (e.g., from a URL paste)
+    # 'last_issue' is a field in the full details but not the search summary.
+    if 'last_issue' in volume_summary:
+        print(f"{Fore.CYAN}🏃‍➡️ Using pre-fetched series details...{Style.RESET_ALL}")
+        series_details = volume_summary
+    else:
+        print(f"{Fore.CYAN}🏃‍➡️ No series.json found. Fetching details from Comic Vine...{Style.RESET_ALL}")
+        volume_id = volume_summary.get('id')
+        series_details = fetch_series_details(volume_id)
+
     if not series_details:
-        print(f"{Fore.RED} ✗ Failed to fetch issue details.{Style.RESET_ALL}")
+        print(f"{Fore.RED} ✗ Failed to fetch series details.{Style.RESET_ALL}")
         return None
 
     series_data = generate_series_data(series_details)
@@ -389,33 +396,42 @@ def select_series(series_title, series_year=None):
         response.raise_for_status()  # Raise an exception for bad status codes
 
         results = response.json().get('results', [])
-        if not results:
-            print(f"{Fore.CYAN} 🏃‍➡️ No series found in cache for '{series_title}'. Searching ComicVine.{Style.RESET_ALL}")
-            return None
-
-        volume = None
-        if len(results) > 1:
-            print(f"{Fore.YELLOW} 👉 Multiple series found. Please select one:{Style.RESET_ALL}")
-            for i, res in enumerate(results):
-                print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
-            print(f"    {Fore.CYAN}{len(results)+1}:{Style.RESET_ALL} None of the above")
-
-            while True:
-                try:
-                    choice = int(input(f"{Fore.YELLOW} 👉 Enter your choice: {Style.RESET_ALL}"))
-                    if 1 <= choice <= len(results):
-                        volume = results[choice-1]
-                        break
-                    elif choice == len(results) + 1:
-                        return None
-                    else:
-                        print(f"{Fore.RED} ✗ Invalid choice. Please try again.{Style.RESET_ALL}")
-                except ValueError:
-                    print(f"{Fore.RED} ✗ Invalid input. Please enter a number.{Style.RESET_ALL}")
-        elif results:
-            volume = results[0]
         
-        return volume
+        # Always give the user a choice, even if there's only one result
+        print(f"{Fore.YELLOW} 👉 Please select the correct series (or provide a URL):{Style.RESET_ALL}")
+        for i, res in enumerate(results):
+            print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
+        
+        print(f"    {Fore.CYAN}S:{Style.RESET_ALL} Skip this series")
+        print(f"    {Fore.CYAN}URL:{Style.RESET_ALL} Paste a direct Comic Vine URL")
+
+        while True:
+            choice = input(f"{Fore.YELLOW} 👉 Enter your choice: {Style.RESET_ALL}").strip().lower()
+            
+            if choice == 's':
+                return None
+            
+            if choice == 'url':
+                url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL: {Style.RESET_ALL}").strip()
+                # Regex to find the volume ID (e.g., 4050-XXXXX)
+                match = re.search(r'/4050-(\d+)/', url)
+                if match:
+                    volume_id = match.group(1)
+                    print(f"{Fore.CYAN} 🏃‍➡️ Found Volume ID {volume_id} from URL. Fetching details...{Style.RESET_ALL}")
+                    # Fetch full details directly, bypassing the normal search flow
+                    return fetch_series_details(volume_id)
+                else:
+                    print(f"{Fore.RED} ✗ Invalid Comic Vine URL format. Please try again.{Style.RESET_ALL}")
+                    continue
+
+            try:
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(results):
+                    return results[choice_num - 1]
+                else:
+                    print(f"{Fore.RED} ✗ Invalid number. Please try again.{Style.RESET_ALL}")
+            except ValueError:
+                print(f"{Fore.RED} ✗ Invalid input. Please enter a number, 'S', or 'URL'.{Style.RESET_ALL}")
 
     except requests.exceptions.RequestException as e:
         print(f"{Fore.RED} ✗ Error searching Comic Vine: {e}{Style.RESET_ALL}")
