@@ -16,6 +16,8 @@ import json
 import time
 from pathlib import Path
 from functools import wraps
+import select
+import sys
 from comic_organizer.comic_info import generate_comic_info_xml
 from comic_organizer.series_info import generate_series_data, write_series_json
 
@@ -66,9 +68,37 @@ def rate_limited():
         return wrapper
     return decorator
 
+def interruptible_wait(duration):
+    """
+    Waits for a given duration, displaying a countdown.
+    Can be interrupted by the user pressing 'r' and Enter.
+    Returns a tuple: (was_interrupted, time_waited).
+    """
+    start_time = time.time()
+    end_time = start_time + duration
+
+    while time.time() < end_time:
+        remaining = int(end_time - time.time())
+        # Display countdown on a single line
+        sys.stdout.write(f"\r{Fore.YELLOW} ⏳ Waiting for {remaining // 60:02d}m {remaining % 60:02d}s... (Press 'r' then Enter to retry now) {Style.RESET_ALL}")
+        sys.stdout.flush()
+
+        # Wait for 1 second for input, non-blockingly
+        rlist, _, _ = select.select([sys.stdin], [], [], 1)
+
+        if rlist:
+            # Input is available, read it
+            input_str = sys.stdin.readline().strip().lower()
+            if input_str == 'r':
+                return True, time.time() - start_time
+    
+    # Wait finished without interruption
+    return False, duration
+
+
 def make_api_request(url, params, headers):
     """
-    Makes an API request with retry logic for 420 errors.
+    Makes an API request with retry logic for 420 errors, including an interruptible wait.
     Returns the response object on success, None on failure.
     """
     try:
@@ -76,20 +106,31 @@ def make_api_request(url, params, headers):
         response.raise_for_status()
         return response
     except requests.exceptions.RequestException as e:
-        # Check if the error has a response and a status code
         if hasattr(e, 'response') and e.response is not None and e.response.status_code == 420:
-            print(f"{Fore.YELLOW} ⚠️ API rate limit (420) hit. Waiting for 1 hour before retrying...{Style.RESET_ALL}")
-            time.sleep(3600)
-            try:
-                print(f"{Fore.CYAN} 🏃‍➡️ Retrying request to {url}...{Style.RESET_ALL}")
-                response = requests.get(url, params=params, headers=headers)
-                response.raise_for_status()
-                return response
-            except requests.exceptions.RequestException as retry_e:
-                print(f"{Fore.RED} ✗ Error on retry after waiting: {retry_e}{Style.RESET_ALL}")
-                return None
+            wait_duration = 3600
+            while wait_duration > 0:
+                print(f"{Fore.YELLOW} ⚠️ API rate limit (420) hit. Waiting...{Style.RESET_ALL}")
+                
+                retry_now, time_waited = interruptible_wait(wait_duration)
+                wait_duration -= time_waited
+
+                if retry_now or wait_duration <= 0:
+                    print(f"\n{Fore.CYAN} 🏃‍➡️ Retrying request to {url}...{Style.RESET_ALL}")
+                    try:
+                        response = requests.get(url, params=params, headers=headers)
+                        response.raise_for_status()
+                        return response  # Success!
+                    except requests.exceptions.RequestException as retry_e:
+                        if hasattr(retry_e, 'response') and retry_e.response is not None and retry_e.response.status_code == 420:
+                            print(f"{Fore.RED} ✗ Retry failed. Resuming wait.{Style.RESET_ALL}")
+                            continue  # Continue the while loop to wait more
+                        else:
+                            print(f"{Fore.RED} ✗ Error on retry: {retry_e}{Style.RESET_ALL}")
+                            return None # Different error, give up
+            
+            print(f"{Fore.RED} ✗ Could not complete request after waiting and retrying.{Style.RESET_ALL}")
+            return None
         else:
-            # Handle other request errors
             print(f"{Fore.RED} ✗ API Request Error: {e}{Style.RESET_ALL}")
             return None
 
