@@ -412,7 +412,7 @@ def select_series(series_title, series_year=None):
                 return None
             
             if choice == 'url':
-                url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL: {Style.RESET_ALL}").strip()
+                url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL (e.g. https://comicvine.gamespot.com/4050-XXXXX/): {Style.RESET_ALL}").strip()
                 # Regex to find the volume ID (e.g., 4050-XXXXX)
                 match = re.search(r'/4050-(\d+)/', url)
                 if match:
