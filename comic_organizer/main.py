@@ -692,7 +692,7 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
             # Identify comic files and extra files
             all_files_in_folder = [os.path.join(folder, f) for f in os.listdir(folder) if os.path.isfile(os.path.join(folder, f))]
             comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith('.cbz')]  # Only look for .cbz files now
-            extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr')]
+            extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr') and os.path.basename(f).lower() != 'series.json']
 
             for comic_file in comic_files_in_folder:
                 print(f"  {Fore.CYAN}Processing {os.path.basename(comic_file)}...{Style.RESET_ALL}")
