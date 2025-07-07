@@ -66,6 +66,33 @@ def rate_limited():
         return wrapper
     return decorator
 
+def make_api_request(url, params, headers):
+    """
+    Makes an API request with retry logic for 420 errors.
+    Returns the response object on success, None on failure.
+    """
+    try:
+        response = requests.get(url, params=params, headers=headers)
+        response.raise_for_status()
+        return response
+    except requests.exceptions.RequestException as e:
+        # Check if the error has a response and a status code
+        if hasattr(e, 'response') and e.response is not None and e.response.status_code == 420:
+            print(f"{Fore.YELLOW} ⚠️ API rate limit (420) hit. Waiting for 1 hour before retrying...{Style.RESET_ALL}")
+            time.sleep(3600)
+            try:
+                print(f"{Fore.CYAN} 🏃‍➡️ Retrying request to {url}...{Style.RESET_ALL}")
+                response = requests.get(url, params=params, headers=headers)
+                response.raise_for_status()
+                return response
+            except requests.exceptions.RequestException as retry_e:
+                print(f"{Fore.RED} ✗ Error on retry after waiting: {retry_e}{Style.RESET_ALL}")
+                return None
+        else:
+            # Handle other request errors
+            print(f"{Fore.RED} ✗ API Request Error: {e}{Style.RESET_ALL}")
+            return None
+
 def scan_comic_files(input_dir):
     comic_files = []
     for root, _, files in os.walk(input_dir):
@@ -298,13 +325,11 @@ def fetch_series_details(volume_id):
         "field_list": "id,name,start_year,publisher,description,count_of_issues,image,last_issue,first_issue,characters,teams,locations,concepts"
     }
     headers = {"User-Agent": "ComicOrganizer/1.0"}
-    try:
-        response = requests.get(url, params=params, headers=headers)
-        response.raise_for_status()
+    
+    response = make_api_request(url, params, headers)
+    if response:
         return response.json().get('results')
-    except requests.exceptions.RequestException as e:
-        print(f"{Fore.RED} ✗ Error fetching series details: {e}{Style.RESET_ALL}")
-        return None
+    return None
 
 
 
@@ -322,19 +347,14 @@ def fetch_volume_issues(volume):
     params = { "api_key": COMICVINE_API_KEY, "format": "json", "field_list": "issues" }
     headers = { "User-Agent": "ComicOrganizer/1.0" }
 
-    try:
-        response = requests.get(volume_url, params=params, headers=headers)
-        response.raise_for_status()
+    response = make_api_request(volume_url, params, headers)
+    if response:
         issues = response.json().get('results', {}).get('issues', [])
-        
-        # Create a map of issue number to issue summary for quick lookups
         issues_map = {issue['issue_number']: issue for issue in issues}
         print(f"{Fore.GREEN}✔ Found and cached {len(issues_map)} issues for this volume.{Style.RESET_ALL}")
         return issues_map
-
-    except requests.exceptions.RequestException as e:
-        print(f"{Fore.RED} ✗ Error fetching volume issues: {e}{Style.RESET_ALL}")
-        return {}
+    
+    return {}
 
 @rate_limited()
 def fetch_issue_details(issue_summary, volume):
@@ -353,18 +373,15 @@ def fetch_issue_details(issue_summary, volume):
     }
     headers = { "User-Agent": "ComicOrganizer/1.0" }
 
-    try:
-        response = requests.get(issue_url, params=params, headers=headers)
-        response.raise_for_status()
+    response = make_api_request(issue_url, params, headers)
+    if response:
         issue_details = response.json().get('results')
         if issue_details:
             issue_details['volume'] = volume  # Inject the full volume info
             print(f"{Fore.GREEN}✔ Found issue: {issue_details.get('name') or volume.get('name')} ({issue_details.get('id')}){Style.RESET_ALL}")
             return issue_details
-        return None
-    except requests.exceptions.RequestException as e:
-        print(f"{Fore.RED} ✗ Error fetching issue details: {e}{Style.RESET_ALL}")
-        return None
+    
+    return None
 
 
 @rate_limited()
@@ -387,55 +404,49 @@ def select_series(series_title, series_year=None):
         "query": series_title,
         "resources": "volume",
     }
-    headers = {
-        "User-Agent": "ComicOrganizer/1.0"
-    }
+    headers = { "User-Agent": "ComicOrganizer/1.0" }
 
-    try:
-        response = requests.get(search_url, params=params, headers=headers)
-        response.raise_for_status()  # Raise an exception for bad status codes
-
-        results = response.json().get('results', [])
-        
-        # Always give the user a choice, even if there's only one result
-        print(f"{Fore.YELLOW} 👉 Please select the correct series (or provide a URL):{Style.RESET_ALL}")
-        for i, res in enumerate(results):
-            print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
-        
-        print(f"    {Fore.CYAN}S:{Style.RESET_ALL} Skip this series")
-        print(f"    {Fore.CYAN}URL:{Style.RESET_ALL} Paste a direct Comic Vine URL")
-
-        while True:
-            choice = input(f"{Fore.YELLOW} 👉 Enter your choice: {Style.RESET_ALL}").strip().lower()
-            
-            if choice == 's':
-                return None
-            
-            if choice == 'url':
-                url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL (e.g. https://comicvine.gamespot.com/4050-XXXXX/): {Style.RESET_ALL}").strip()
-                # Regex to find the volume ID (e.g., 4050-XXXXX)
-                match = re.search(r'/4050-(\d+)/', url)
-                if match:
-                    volume_id = match.group(1)
-                    print(f"{Fore.CYAN} 🏃‍➡️ Found Volume ID {volume_id} from URL. Fetching details...{Style.RESET_ALL}")
-                    # Fetch full details directly, bypassing the normal search flow
-                    return fetch_series_details(volume_id)
-                else:
-                    print(f"{Fore.RED} ✗ Invalid Comic Vine URL format. Please try again.{Style.RESET_ALL}")
-                    continue
-
-            try:
-                choice_num = int(choice)
-                if 1 <= choice_num <= len(results):
-                    return results[choice_num - 1]
-                else:
-                    print(f"{Fore.RED} ✗ Invalid number. Please try again.{Style.RESET_ALL}")
-            except ValueError:
-                print(f"{Fore.RED} ✗ Invalid input. Please enter a number, 'S', or 'URL'.{Style.RESET_ALL}")
-
-    except requests.exceptions.RequestException as e:
-        print(f"{Fore.RED} ✗ Error searching Comic Vine: {e}{Style.RESET_ALL}")
+    response = make_api_request(search_url, params, headers)
+    if not response:
         return None
+
+    results = response.json().get('results', [])
+    
+    # Always give the user a choice, even if there's only one result
+    print(f"{Fore.YELLOW} 👉 Please select the correct series (or provide a URL):{Style.RESET_ALL}")
+    for i, res in enumerate(results):
+        print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
+    
+    print(f"    {Fore.CYAN}S:{Style.RESET_ALL} Skip this series")
+    print(f"    {Fore.CYAN}URL:{Style.RESET_ALL} Paste a direct Comic Vine URL")
+
+    while True:
+        choice = input(f"{Fore.YELLOW} 👉 Enter your choice: {Style.RESET_ALL}").strip().lower()
+        
+        if choice == 's':
+            return None
+        
+        if choice == 'url':
+            url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL: {Style.RESET_ALL}").strip()
+            # Regex to find the volume ID (e.g., 4050-XXXXX)
+            match = re.search(r'/4050-(\d+)/', url)
+            if match:
+                volume_id = match.group(1)
+                print(f"{Fore.CYAN} 🏃‍➡️ Found Volume ID {volume_id} from URL. Fetching details...{Style.RESET_ALL}")
+                # Fetch full details directly, bypassing the normal search flow
+                return fetch_series_details(volume_id)
+            else:
+                print(f"{Fore.RED} ✗ Invalid Comic Vine URL format. Please try again.{Style.RESET_ALL}")
+                continue
+
+        try:
+            choice_num = int(choice)
+            if 1 <= choice_num <= len(results):
+                return results[choice_num - 1]
+            else:
+                print(f"{Fore.RED} ✗ Invalid number. Please try again.{Style.RESET_ALL}")
+        except ValueError:
+            print(f"{Fore.RED} ✗ Invalid input. Please enter a number, 'S', or 'URL'.{Style.RESET_ALL}")
 
 
 
