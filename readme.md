@@ -50,12 +50,13 @@ A tool to organize comic book runs in archive (CBZ/CBR) format by fetching metad
 
 ## Usage
 
-### Naming your folder is a key step
-SeriesName Version(Optional) (Year)
+### Naming your series folder is the first key step
 
+Ensure they are named like this:
+```SeriesName Version(Optional) (Year)```
 Examples:
-Amazing X-Men (2014)
-Batman Beyond v3 (2016)
+```Amazing X-Men (2014)```
+```Batman Beyond v3 (2016)```
 
 You can run the tool using the installed script or directly via Python:
 
