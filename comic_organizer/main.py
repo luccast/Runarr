@@ -71,29 +71,46 @@ def rate_limited():
 def interruptible_wait(duration):
     """
     Waits for a given duration, displaying a countdown.
-    Can be interrupted by the user pressing 'r' and Enter.
+    Can be interrupted by the user pressing 'r'.
     Returns a tuple: (was_interrupted, time_waited).
     """
     start_time = time.time()
     end_time = start_time + duration
 
+    is_windows = sys.platform == "win32"
+    if is_windows:
+        import msvcrt
+
+    prompt = f"(Press 'r' to retry now)" if is_windows else f"(Press 'r' then Enter to retry now)"
+
     while time.time() < end_time:
         remaining = int(end_time - time.time())
-        # Display countdown on a single line
-        sys.stdout.write(f"\r{Fore.YELLOW} ⏳ Waiting for {remaining // 60:02d}m {remaining % 60:02d}s... (Press 'r' then Enter to retry now) {Style.RESET_ALL}")
+        sys.stdout.write(f"\r{Fore.YELLOW} ⏳ Waiting for {remaining // 60:02d}m {remaining % 60:02d}s... {prompt} {Style.RESET_ALL}")
         sys.stdout.flush()
 
-        # Wait for 1 second for input, non-blockingly
-        rlist, _, _ = select.select([sys.stdin], [], [], 1)
+        interrupted = False
+        if is_windows:
+            # On Windows, check for key press for 1 second
+            wait_start = time.time()
+            while time.time() - wait_start < 1.0:
+                if msvcrt.kbhit() and msvcrt.getch().decode('utf-8').lower() == 'r':
+                    interrupted = True
+                    break
+                time.sleep(0.1) # Avoid busy-waiting
+        else:
+            # On POSIX, wait for input for 1 second
+            rlist, _, _ = select.select([sys.stdin], [], [], 1)
+            if rlist and sys.stdin.readline().strip().lower() == 'r':
+                interrupted = True
 
-        if rlist:
-            # Input is available, read it
-            input_str = sys.stdin.readline().strip().lower()
-            if input_str == 'r':
-                return True, time.time() - start_time
-    
+        if interrupted:
+            sys.stdout.write("\r" + " " * 80 + "\r") # Clear line
+            return True, time.time() - start_time
+
     # Wait finished without interruption
+    sys.stdout.write("\r" + " " * 80 + "\r") # Clear line
     return False, duration
+
 
 
 def make_api_request(url, params, headers):
