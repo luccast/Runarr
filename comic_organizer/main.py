@@ -6,7 +6,7 @@ import guessit
 import imagehash
 import requests
 import zipfile
-from rarfile import RarFile
+from rarfile import RarFile, is_rarfile
 from PIL import Image
 from datetime import datetime
 import xml.etree.ElementTree as ET
@@ -625,7 +625,7 @@ def convert_cbr_to_cbz(cbr_path):
             return None
 
     # Case 2: The file is a genuine RAR file
-    if rarfile.is_rarfile(cbr_path):
+    if is_rarfile(cbr_path):
         temp_dir = tempfile.mkdtemp()
         try:
             print(f"{Fore.CYAN} 🔄 Converting RAR {cbr_path} to .cbz...{Style.RESET_ALL}")
