@@ -587,42 +587,77 @@ def sanitize_filename(name):
     return name.strip()
 
 
+def rmtree_with_retry(path, max_retries=5, delay_seconds=0.5):
+    """
+    Robustly removes a directory tree, retrying on PermissionError.
+    """
+    for i in range(max_retries):
+        try:
+            shutil.rmtree(path)
+            return
+        except PermissionError:
+            print(f"{Fore.YELLOW} ⚠️ Permission denied to remove {path}. Retrying in {delay_seconds}s... ({i+1}/{max_retries}){Style.RESET_ALL}")
+            time.sleep(delay_seconds)
+        except FileNotFoundError:
+            # Directory was already removed, which is fine.
+            return
+        except Exception as e:
+            print(f"{Fore.RED} ✗ Unexpected error while removing {path}: {e}{Style.RESET_ALL}")
+            break
+    print(f"{Fore.RED} ✗ Failed to remove directory {path} after {max_retries} retries.{Style.RESET_ALL}")
+
+
 def convert_cbr_to_cbz(cbr_path):
     """
-    Converts a .cbr file to a .cbz file.
+    Converts a .cbr file to a .cbz file, handling misnamed zip files.
     """
     cbz_path = os.path.splitext(cbr_path)[0] + '.cbz'
-    temp_dir = tempfile.mkdtemp()
     
-    try:
-        print(f"{Fore.CYAN} 🔄 Converting {cbr_path} to .cbz...{Style.RESET_ALL}")
-        with RarFile(cbr_path, 'r') as archive:
-            archive.extractall(temp_dir)
-        
-        with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(temp_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, temp_dir)
-                    zf.write(file_path, arcname)
-        
-        # Validate the new cbz file
-        with zipfile.ZipFile(cbz_path, 'r') as zf:
-            if zf.testzip() is not None:
-                raise Exception("Failed to validate the new .cbz file.")
-        
-        print(f"{Fore.GREEN} ✔ Successfully converted to {cbz_path}{Style.RESET_ALL}")
-        os.remove(cbr_path)
-        return cbz_path
+    # Case 1: The file is a ZIP file misnamed as .cbr
+    if zipfile.is_zipfile(cbr_path):
+        print(f"{Fore.CYAN} 🔄 File is a zip archive. Renaming {cbr_path} to .cbz...{Style.RESET_ALL}")
+        try:
+            os.rename(cbr_path, cbz_path)
+            print(f"{Fore.GREEN} ✔ Successfully renamed to {cbz_path}{Style.RESET_ALL}")
+            return cbz_path
+        except OSError as e:
+            print(f"{Fore.RED} ✗ Error renaming file: {e}{Style.RESET_ALL}")
+            return None
 
-    except Exception as e:
-        print(f"{Fore.RED} ✗ Error converting {cbr_path}: {e}{Style.RESET_ALL}")
-        # Clean up the partially created .cbz file if conversion fails
-        if os.path.exists(cbz_path):
-            os.remove(cbz_path)
-        return None
-    finally:
-        shutil.rmtree(temp_dir)
+    # Case 2: The file is a genuine RAR file
+    if rarfile.is_rarfile(cbr_path):
+        temp_dir = tempfile.mkdtemp()
+        try:
+            print(f"{Fore.CYAN} 🔄 Converting RAR {cbr_path} to .cbz...{Style.RESET_ALL}")
+            with RarFile(cbr_path, 'r') as archive:
+                archive.extractall(temp_dir)
+            
+            with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for root, _, files in os.walk(temp_dir):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        arcname = os.path.relpath(file_path, temp_dir)
+                        zf.write(file_path, arcname)
+            
+            with zipfile.ZipFile(cbz_path, 'r') as zf:
+                if zf.testzip() is not None:
+                    raise Exception("Failed to validate the new .cbz file.")
+            
+            print(f"{Fore.GREEN} ✔ Successfully converted to {cbz_path}{Style.RESET_ALL}")
+            os.remove(cbr_path)
+            return cbz_path
+
+        except Exception as e:
+            print(f"{Fore.RED} ✗ Error converting {cbr_path}: {e}{Style.RESET_ALL}")
+            if os.path.exists(cbz_path):
+                os.remove(cbz_path)
+            return None
+        finally:
+            rmtree_with_retry(temp_dir)
+    
+    # Case 3: The file is not a recognized archive type
+    print(f"{Fore.RED} ✗ Skipped: {cbr_path} is not a valid RAR or ZIP file.{Style.RESET_ALL}")
+    return None
 
 
 
