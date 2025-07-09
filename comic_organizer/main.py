@@ -511,7 +511,67 @@ def select_series(series_title, series_year=None):
 
 
 
-def organize_file(original_path, issue_details, output_dir, dry_run=False, version_str=None):
+def read_comic_info_from_archive(comic_file_path):
+    """
+    Reads ComicInfo.xml from a .cbz archive and returns details in a structured format.
+    Returns None if ComicInfo.xml is not found or cannot be parsed.
+    """
+    if not comic_file_path.lower().endswith('.cbz'):
+        return None
+
+    try:
+        with zipfile.ZipFile(comic_file_path, 'r') as zf:
+            if 'ComicInfo.xml' not in zf.namelist():
+                return None
+            
+            print(f"{Fore.GREEN} ✔ Found ComicInfo.xml in {os.path.basename(comic_file_path)}. Parsing...{Style.RESET_ALL}")
+            with zf.open('ComicInfo.xml') as xml_file:
+                tree = ET.parse(xml_file)
+                root = tree.getroot()
+
+                # Helper to find text in an element, returns None if not found
+                def find_text(tag):
+                    element = root.find(tag)
+                    return element.text if element is not None and element.text else None
+
+                series = find_text('Series')
+                volume_year = find_text('Volume') # This is often the start year of the volume
+                issue_number = find_text('Number')
+                
+                # Reconstruct cover_date from Year, Month, Day
+                year = find_text('Year')
+                month = find_text('Month')
+                day = find_text('Day')
+                cover_date = None
+                if year and month and day:
+                    try:
+                        cover_date = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
+                    except (ValueError, TypeError):
+                        cover_date = None # Ignore invalid date parts
+                
+                if not all([series, volume_year, issue_number]):
+                    print(f"{Fore.YELLOW} ⚠️ ComicInfo.xml is missing required tags (Series, Volume, Number). Falling back to API.{Style.RESET_ALL}")
+                    return None
+
+                # Build the object to mimic the API response structure
+                return {
+                    'volume': {
+                        'name': series,
+                        'start_year': volume_year
+                    },
+                    'issue_number': issue_number,
+                    'cover_date': cover_date,
+                }
+
+    except (zipfile.BadZipFile, ET.ParseError) as e:
+        print(f"{Fore.RED} ✗ Error reading ComicInfo.xml from {os.path.basename(comic_file_path)}: {e}{Style.RESET_ALL}")
+        return None
+    except Exception as e:
+        print(f"{Fore.RED} ✗ An unexpected error occurred while parsing ComicInfo.xml: {e}{Style.RESET_ALL}")
+        return None
+
+
+def organize_file(original_path, issue_details, output_dir, dry_run=False, version_str=None, skip_xml_write=False):
     if not issue_details:
         return None
 
@@ -555,7 +615,9 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False, versi
     new_file_path = os.path.join(new_series_folder, new_file_name)
 
     # Generate ComicInfo.xml
-    comic_info_xml = generate_comic_info_xml(issue_details)
+    comic_info_xml = None
+    if not skip_xml_write:
+        comic_info_xml = generate_comic_info_xml(issue_details)
 
     if dry_run:
         print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would move and rename to: {new_file_path}{Style.RESET_ALL}")
@@ -816,21 +878,32 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
 
             for comic_file in comic_files_in_folder:
                 print(f"  {Fore.CYAN}Processing {os.path.basename(comic_file)}...{Style.RESET_ALL}")
-                cover_image = extract_cover_image(comic_file)
-                if cover_image:
-                    print(f"  {Fore.GREEN} ✔ Successfully extracted cover image.{Style.RESET_ALL}")
-                    issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
-                    
-                    if issue_details:
-                        # The organize_file function now returns the path to the *newly created* file
-                        new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str)
-                        if new_file_path:
-                            processed_comics.add(new_file_path)
-                            # Determine the new series folder from the first successfully processed comic
-                            if not new_series_folder_path:
-                                new_series_folder_path = os.path.dirname(new_file_path)
+
+                # --- NEW: Prioritize local ComicInfo.xml ---
+                local_issue_details = read_comic_info_from_archive(comic_file)
+                
+                if local_issue_details:
+                    # If local XML is found and parsed, use it to organize the file directly
+                    new_file_path = organize_file(comic_file, local_issue_details, base_output_dir, args.dry_run, version_str, skip_xml_write=True)
+                    if new_file_path:
+                        processed_comics.add(new_file_path)
+                        if not new_series_folder_path:
+                            new_series_folder_path = os.path.dirname(new_file_path)
                 else:
-                    print(f"  {Fore.RED} ✗ Could not extract cover image.{Style.RESET_ALL}")
+                    # --- FALLBACK: Use existing API logic ---
+                    cover_image = extract_cover_image(comic_file)
+                    if cover_image:
+                        print(f"  {Fore.GREEN} ✔ Successfully extracted cover image.{Style.RESET_ALL}")
+                        issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
+                        
+                        if issue_details:
+                            new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str)
+                            if new_file_path:
+                                processed_comics.add(new_file_path)
+                                if not new_series_folder_path:
+                                    new_series_folder_path = os.path.dirname(new_file_path)
+                    else:
+                        print(f"  {Fore.RED} ✗ Could not extract cover image from {os.path.basename(comic_file)}.{Style.RESET_ALL}")
 
             # --- Extras and Cleanup Logic ---
             if not args.dry_run and new_series_folder_path:
