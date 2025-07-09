@@ -511,13 +511,17 @@ def select_series(series_title, series_year=None):
 
 
 
-def read_comic_info_from_archive(comic_file_path):
+def read_comic_info_from_archive(comic_file_path, overwrite=False):
     """
     Reads ComicInfo.xml from a .cbz archive.
     Returns a tuple: (details, is_complete)
     - details: A dictionary with the parsed data.
     - is_complete: A boolean indicating if the XML has rich metadata.
     """
+    if overwrite:
+        print(f"{Fore.YELLOW} ⚠️ Overwrite flag is set. Ignoring existing ComicInfo.xml.{Style.RESET_ALL}")
+        return None, False
+
     if not comic_file_path.lower().endswith('.cbz'):
         return None, False
 
@@ -789,6 +793,7 @@ def main():
     parser.add_argument('--series-folder', help='(Optional) The name of a specific series folder to process within the input directory.')
     parser.add_argument('--dry-run', action='store_true', help='Perform a dry run without moving files.')
     parser.add_argument('--force-refresh', action='store_true', help='Force a refresh of cached data for a specific series folder.')
+    parser.add_argument('-o', '--overwrite', action='store_true', help='Treat issues as if they have no metadata, forcing a re-download and overwrite.')
     parser.add_argument('-y', '--yes', action='store_true', help='Automatically answer yes to all prompts and skip confirmations.')
     parser.add_argument('--comicvine-api-key', help='Set or update your Comic Vine API key. This will be saved for future use.')
     init(autoreset=True)
@@ -924,7 +929,7 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
                 skip_xml_write = False
                 
                 # --- NEW: Prioritize and Assess local ComicInfo.xml ---
-                local_details, is_complete = read_comic_info_from_archive(comic_file)
+                local_details, is_complete = read_comic_info_from_archive(comic_file, overwrite=args.overwrite)
                 
                 if local_details:
                     if is_complete:
