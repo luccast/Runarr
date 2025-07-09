@@ -184,10 +184,14 @@ def extract_cover_image(comic_file_path):
         print(f"{Fore.RED} ✗ Error extracting cover from {comic_file_path}: {e}{Style.RESET_ALL}")
     return None
 
-def load_volume_from_series_json(folder_path):
+def load_volume_from_series_json(folder_path, overwrite=False):
     """
     Loads volume information from a series.json file if it exists in the folder.
     """
+    if overwrite:
+        print(f"{Fore.YELLOW} ⚠️ Overwrite flag is set. Ignoring existing series.json.{Style.RESET_ALL}")
+        return None
+        
     series_json_path = os.path.join(folder_path, 'series.json')
     if os.path.exists(series_json_path):
         print(f"{Fore.GREEN}✔ Found existing series.json at: {series_json_path}{Style.RESET_ALL}")
@@ -212,7 +216,7 @@ def load_volume_from_series_json(folder_path):
 
 import re
 
-def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run, version_str=None):
+def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run, version_str=None, overwrite=False):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
     folder_path = os.path.dirname(comic_file_path)
@@ -270,7 +274,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         selected_volume = series_cache.get(folder_path)
         if selected_volume is None:
             # Try to load from existing series.json first
-            selected_volume = load_volume_from_series_json(folder_path)
+            selected_volume = load_volume_from_series_json(folder_path, overwrite=overwrite)
             
             if not selected_volume:
                 # If not found or failed to load, then go to the API
@@ -944,14 +948,14 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
                         # and fetch the full details in one go.
                         cover_image = extract_cover_image(comic_file)
                         if cover_image:
-                             issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
+                             issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str, overwrite=args.overwrite)
                         # We will NOT skip XML write, as we want to overwrite the incomplete one.
                 
                 # --- FALLBACK: Use existing API logic if no local XML was found ---
                 if not issue_details:
                     cover_image = extract_cover_image(comic_file)
                     if cover_image:
-                        issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
+                        issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str, overwrite=args.overwrite)
                     else:
                         print(f"  {Fore.RED} ✗ Could not extract cover image from {os.path.basename(comic_file)}.{Style.RESET_ALL}")
 
