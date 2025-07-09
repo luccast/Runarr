@@ -237,12 +237,12 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
     clean_file_name = re.sub(r'\(.*?\)', '', file_name)
 
     # 1. Prioritize numbers prefixed with '#'
-    hash_match = re.search(r'#(\d+)', clean_file_name)
+    hash_match = re.search(r'#(\d+(\.\d+)?)', clean_file_name)
     if hash_match:
         issue_number = hash_match.group(1)
     else:
-        # 2. Find all standalone numbers in the filename
-        potential_numbers = re.findall(r'\b\d+\b', clean_file_name)
+        # 2. Find all standalone numbers (including decimals) in the filename
+        potential_numbers = re.findall(r'\b\d+(\.\d+)?\b', clean_file_name)
         
         # 3. Filter out likely years
         non_year_numbers = [
@@ -300,7 +300,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
             return None
 
         # Step 3: Find the specific issue in the cached list
-        issue_summary = issues_map.get(str(int(issue_number))) # Normalize issue number
+        issue_summary = issues_map.get(str(issue_number)) # Use the string representation of the issue number
         if not issue_summary:
             print(f"{Fore.YELLOW} ⚠️ Issue #{issue_number} not found in the fetched issue list.{Style.RESET_ALL}")
             return None
@@ -634,8 +634,13 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False, versi
         print(f"{Fore.RED} ✗ Could not determine new file name. Missing required details.{Style.RESET_ALL}")
         return None
 
-    # Format the issue number to be three digits with leading zeros
-    issue_number_padded = issue_number_str.zfill(3)
+    # Format the issue number with padding for the integer part
+    if '.' in issue_number_str:
+        parts = issue_number_str.split('.')
+        integer_part = parts[0].zfill(3)
+        issue_number_padded = f"{integer_part}.{parts[1]}"
+    else:
+        issue_number_padded = issue_number_str.zfill(3)
 
     # Format the cover date
     cover_date_str = issue_details.get('cover_date')
