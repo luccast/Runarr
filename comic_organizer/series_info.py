@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import requests
 from datetime import datetime
 from colorama import Fore, Style
 
@@ -70,7 +71,7 @@ def generate_series_data(series_details):
     return metadata
 
 def write_series_json(series_data, series_folder, dry_run):
-    """Writes the series metadata to a series.json file."""
+    """Writes the series metadata to a series.json file and downloads the cover image."""
     if not series_data:
         return
 
@@ -81,8 +82,30 @@ def write_series_json(series_data, series_folder, dry_run):
             with open(series_json_path, 'w', encoding='utf-8') as f:
                 json.dump(series_data, f, indent=4, ensure_ascii=False)
             print(f"{Fore.GREEN}✔ Successfully wrote series.json to: {series_folder}{Style.RESET_ALL}")
+
+            # Download cover image
+            image_url = series_data.get('metadata', {}).get('comic_image')
+            if image_url:
+                try:
+                    response = requests.get(image_url, stream=True)
+                    response.raise_for_status()
+                    # Get the file extension from the URL
+                    file_extension = os.path.splitext(image_url)[1]
+                    cover_filename = f"cover{file_extension}"
+                    cover_path = os.path.join(series_folder, cover_filename)
+                    with open(cover_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            f.write(chunk)
+                    print(f"{Fore.GREEN}✔ Successfully downloaded cover image to: {cover_path}{Style.RESET_ALL}")
+                except requests.exceptions.RequestException as e:
+                    print(f"{Fore.RED} ✗ Error downloading cover image: {e}{Style.RESET_ALL}")
         except IOError as e:
             print(f"{Fore.RED} ✗ Error writing series.json: {e}{Style.RESET_ALL}")
     else:
         print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would write series.json to: {os.path.join(series_folder, 'series.json')}{Style.RESET_ALL}")
-        # print(json.dumps(series_data, indent=4))
+        image_url = series_data.get('metadata', {}).get('comic_image')
+        if image_url:
+            file_extension = os.path.splitext(image_url)[1]
+            cover_filename = f"cover{file_extension}"
+            cover_path = os.path.join(series_folder, cover_filename)
+            print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would download cover image to: {cover_path}{Style.RESET_ALL}")
