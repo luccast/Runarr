@@ -283,7 +283,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
                     series_cache[folder_path] = None  # Cache failure
                     return None
                 
-                selected_volume = handle_series_selection(volume_summary, output_dir, dry_run, version_str)
+                selected_volume = handle_series_selection(volume_summary, output_dir, dry_run, version_str, overwrite=overwrite)
             
             series_cache[folder_path] = selected_volume  # Cache the detailed volume
         
@@ -310,10 +310,13 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         issue_num_str = issue_summary.get('issue_number')
         cache_key = f"{volume_id}-{issue_num_str}"
 
-        if cache_key in issue_details_cache:
+        if cache_key in issue_details_cache and not overwrite:
             print(f"{Fore.GREEN}✔ Found issue #{issue_num_str} in cache. Skipping API call.{Style.RESET_ALL}")
             return issue_details_cache[cache_key]
         else:
+            if overwrite and cache_key in issue_details_cache:
+                print(f"{Fore.YELLOW} ⚠️ Overwrite flag is set. Re-fetching details for issue #{issue_num_str} from API.{Style.RESET_ALL}")
+            
             issue_details = fetch_issue_details(issue_summary, selected_volume)
             if issue_details:
                 print(f"{Fore.GREEN}✔ Adding issue #{issue_num_str} to cache.{Style.RESET_ALL}")
@@ -324,7 +327,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         print(f"{Fore.YELLOW} ⚠️ Could not guess issue number from '{file_name}'. Skipping.{Style.RESET_ALL}")
         return None
 
-def handle_series_selection(volume_summary, output_dir, dry_run, version_str=None):
+def handle_series_selection(volume_summary, output_dir, dry_run, version_str=None, overwrite=False):
     """
     Handles logic for creating or loading a series.json file after a series is selected.
     """
@@ -337,7 +340,10 @@ def handle_series_selection(volume_summary, output_dir, dry_run, version_str=Non
     
     series_json_path = os.path.join(new_series_folder, 'series.json')
 
-    if os.path.exists(series_json_path):
+    if overwrite and os.path.exists(series_json_path):
+        print(f"{Fore.YELLOW} ⚠️ Overwrite flag is set. Ignoring existing series.json in target folder.{Style.RESET_ALL}")
+
+    if os.path.exists(series_json_path) and not overwrite:
         print(f"{Fore.GREEN}✔ Found existing series.json at: {series_json_path}{Style.RESET_ALL}")
         try:
             with open(series_json_path, 'r', encoding='utf-8') as f:
