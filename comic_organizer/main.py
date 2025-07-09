@@ -237,12 +237,12 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
     clean_file_name = re.sub(r'\(.*?\)', '', file_name)
 
     # 1. Prioritize numbers prefixed with '#'
-    hash_match = re.search(r'#(\d+(\.\d+)?)', clean_file_name)
+    hash_match = re.search(r'#(\d+(?:\.\d+)?)', clean_file_name)
     if hash_match:
         issue_number = hash_match.group(1)
     else:
         # 2. Find all standalone numbers (including decimals) in the filename
-        potential_numbers = re.findall(r'\b\d+(\.\d+)?\b', clean_file_name)
+        potential_numbers = re.findall(r'\b\d+(?:\.\d+)?\b', clean_file_name)
         
         # 3. Filter out likely years
         non_year_numbers = [
@@ -268,6 +268,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
         print(f"{Fore.GREEN}✔ Cover hash: {cover_hash}{Style.RESET_ALL}")
 
     if series_title and issue_number:
+        issue_number = str(issue_number) # Ensure it's a string
         print(f"{Fore.CYAN} 🏃‍➡️ Guessed Series: {series_title}, Issue: {issue_number}{Style.RESET_ALL}")
         
         # Step 1: Get the selected volume (cached per folder)
@@ -300,9 +301,17 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
             return None
 
         # Step 3: Find the specific issue in the cached list
-        issue_summary = issues_map.get(str(issue_number)) # Use the string representation of the issue number
+        try:
+            # Normalize issue number: "001" -> "1", "1.10" -> "1.1"
+            normalized_issue_number = str(float(issue_number))
+            if normalized_issue_number.endswith('.0'):
+                normalized_issue_number = normalized_issue_number[:-2]
+        except ValueError:
+            normalized_issue_number = issue_number # Fallback for non-numeric
+
+        issue_summary = issues_map.get(normalized_issue_number)
         if not issue_summary:
-            print(f"{Fore.YELLOW} ⚠️ Issue #{issue_number} not found in the fetched issue list.{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW} ⚠️ Issue #{issue_number} (normalized: {normalized_issue_number}) not found in the fetched issue list.{Style.RESET_ALL}")
             return None
 
         # Step 4: Check cache or fetch the detailed metadata for the specific issue
