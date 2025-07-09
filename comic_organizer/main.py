@@ -513,32 +513,41 @@ def select_series(series_title, series_year=None):
 
 def read_comic_info_from_archive(comic_file_path):
     """
-    Reads ComicInfo.xml from a .cbz archive and returns details in a structured format.
-    Returns None if ComicInfo.xml is not found or cannot be parsed.
+    Reads ComicInfo.xml from a .cbz archive.
+    Returns a tuple: (details, is_complete)
+    - details: A dictionary with the parsed data.
+    - is_complete: A boolean indicating if the XML has rich metadata.
     """
     if not comic_file_path.lower().endswith('.cbz'):
-        return None
+        return None, False
 
     try:
         with zipfile.ZipFile(comic_file_path, 'r') as zf:
             if 'ComicInfo.xml' not in zf.namelist():
-                return None
+                return None, False
             
-            print(f"{Fore.GREEN} ✔ Found ComicInfo.xml in {os.path.basename(comic_file_path)}. Parsing...{Style.RESET_ALL}")
             with zf.open('ComicInfo.xml') as xml_file:
                 tree = ET.parse(xml_file)
                 root = tree.getroot()
 
-                # Helper to find text in an element, returns None if not found
                 def find_text(tag):
                     element = root.find(tag)
                     return element.text if element is not None and element.text else None
 
                 series = find_text('Series')
-                volume_year = find_text('Volume') # This is often the start year of the volume
+                volume_year = find_text('Volume')
                 issue_number = find_text('Number')
                 
-                # Reconstruct cover_date from Year, Month, Day
+                if not all([series, volume_year, issue_number]):
+                    return None, False
+
+                # Check for signs of rich metadata
+                publisher = find_text('Publisher')
+                summary = find_text('Summary')
+                writer = find_text('Writer')
+                is_complete = all([publisher, summary, writer])
+
+                # Reconstruct cover_date
                 year = find_text('Year')
                 month = find_text('Month')
                 day = find_text('Day')
@@ -547,28 +556,51 @@ def read_comic_info_from_archive(comic_file_path):
                     try:
                         cover_date = f"{int(year):04d}-{int(month):02d}-{int(day):02d}"
                     except (ValueError, TypeError):
-                        cover_date = None # Ignore invalid date parts
+                        pass
                 
-                if not all([series, volume_year, issue_number]):
-                    print(f"{Fore.YELLOW} ⚠️ ComicInfo.xml is missing required tags (Series, Volume, Number). Falling back to API.{Style.RESET_ALL}")
-                    return None
-
-                # Build the object to mimic the API response structure
-                return {
-                    'volume': {
-                        'name': series,
-                        'start_year': volume_year
-                    },
+                details = {
+                    'volume': {'name': series, 'start_year': volume_year},
                     'issue_number': issue_number,
                     'cover_date': cover_date,
                 }
+                
+                print(f"{Fore.GREEN} ✔ Found ComicInfo.xml in {os.path.basename(comic_file_path)}. Complete: {is_complete}{Style.RESET_ALL}")
+                return details, is_complete
 
     except (zipfile.BadZipFile, ET.ParseError) as e:
-        print(f"{Fore.RED} ✗ Error reading ComicInfo.xml from {os.path.basename(comic_file_path)}: {e}{Style.RESET_ALL}")
-        return None
+        print(f"{Fore.RED} ✗ Error reading ComicInfo.xml: {e}{Style.RESET_ALL}")
+        return None, False
     except Exception as e:
-        print(f"{Fore.RED} ✗ An unexpected error occurred while parsing ComicInfo.xml: {e}{Style.RESET_ALL}")
-        return None
+        print(f"{Fore.RED} ✗ Unexpected error parsing ComicInfo.xml: {e}{Style.RESET_ALL}")
+        return None, False
+
+
+def overwrite_comic_info_in_archive(cbz_path, xml_content):
+    """
+    Safely overwrites the ComicInfo.xml in a .cbz file.
+    """
+    temp_dir = tempfile.mkdtemp()
+    temp_zip_path = os.path.join(temp_dir, os.path.basename(cbz_path))
+
+    try:
+        with zipfile.ZipFile(cbz_path, 'r') as original_zip:
+            with zipfile.ZipFile(temp_zip_path, 'w', zipfile.ZIP_DEFLATED) as new_zip:
+                for item in original_zip.infolist():
+                    # Copy all files except the old ComicInfo.xml
+                    if item.filename.lower() != 'comicinfo.xml':
+                        new_zip.writestr(item, original_zip.read(item.filename))
+                # Add the new, enriched ComicInfo.xml
+                new_zip.writestr('ComicInfo.xml', xml_content)
+        
+        # Replace the original file with the new one
+        shutil.move(temp_zip_path, cbz_path)
+        print(f"{Fore.GREEN} ✔ Successfully overwrote ComicInfo.xml in {os.path.basename(cbz_path)}{Style.RESET_ALL}")
+        return True
+    except Exception as e:
+        print(f"{Fore.RED} ✗ Failed to overwrite ComicInfo.xml: {e}{Style.RESET_ALL}")
+        return False
+    finally:
+        rmtree_with_retry(temp_dir)
 
 
 def organize_file(original_path, issue_details, output_dir, dry_run=False, version_str=None, skip_xml_write=False):
@@ -622,12 +654,15 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False, versi
     if dry_run:
         print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would move and rename to: {new_file_path}{Style.RESET_ALL}")
         if comic_info_xml:
-            print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would generate and embed ComicInfo.xml.{Style.RESET_ALL}")
+            if skip_xml_write: # This case means we are enriching an existing file
+                 print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would overwrite existing ComicInfo.xml with enriched data.{Style.RESET_ALL}")
+            else:
+                 print(f"{Fore.CYAN} 🏃‍➡️ [DRY RUN] Would generate and embed ComicInfo.xml.{Style.RESET_ALL}")
+
     else:
         print(f"{Fore.CYAN} 📦 Moving and renaming to: {new_file_path}{Style.RESET_ALL}")
         os.makedirs(new_series_folder, exist_ok=True)
         
-        # Before moving, check if the destination is the same as the source
         if original_path != new_file_path:
             shutil.move(original_path, new_file_path)
         else:
@@ -635,18 +670,24 @@ def organize_file(original_path, issue_details, output_dir, dry_run=False, versi
 
         if comic_info_xml:
             if new_file_path.lower().endswith('.cbz'):
-                try:
-                    with zipfile.ZipFile(new_file_path, 'a') as zf:
-                        # Check if ComicInfo.xml already exists
-                        if 'ComicInfo.xml' not in zf.namelist():
-                            zf.writestr('ComicInfo.xml', comic_info_xml)
-                            print(f"{Fore.GREEN} ✔ Successfully embedded ComicInfo.xml.{Style.RESET_ALL}")
-                        else:
-                            print(f"{Fore.YELLOW} ⚠️ ComicInfo.xml already exists. Skipping embedding.{Style.RESET_ALL}")
-                except Exception as e:
-                    print(f"{Fore.RED} ✗ Error embedding ComicInfo.xml: {e}{Style.RESET_ALL}")
+                # If we are enriching, we overwrite; otherwise, we add.
+                if skip_xml_write:
+                    overwrite_comic_info_in_archive(new_file_path, comic_info_xml)
+                else:
+                    try:
+                        with zipfile.ZipFile(new_file_path, 'a') as zf:
+                            if 'ComicInfo.xml' not in zf.namelist():
+                                zf.writestr('ComicInfo.xml', comic_info_xml)
+                                print(f"{Fore.GREEN} ✔ Successfully embedded ComicInfo.xml.{Style.RESET_ALL}")
+                            else:
+                                # This case should ideally not be hit if logic is correct
+                                print(f"{Fore.YELLOW} ⚠️ ComicInfo.xml already exists. Overwriting...{Style.RESET_ALL}")
+                                overwrite_comic_info_in_archive(new_file_path, comic_info_xml)
+                    except Exception as e:
+                        print(f"{Fore.RED} ✗ Error embedding ComicInfo.xml: {e}{Style.RESET_ALL}")
+
             elif new_file_path.lower().endswith('.cbr'):
-                print(f"{Fore.YELLOW} ⚠️ Skipping ComicInfo.xml embedding for .cbr file (modification not yet supported).{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW} ⚠️ Skipping ComicInfo.xml embedding for .cbr file.{Style.RESET_ALL}")
     
     return new_file_path
 
@@ -879,31 +920,43 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
             for comic_file in comic_files_in_folder:
                 print(f"  {Fore.CYAN}Processing {os.path.basename(comic_file)}...{Style.RESET_ALL}")
 
-                # --- NEW: Prioritize local ComicInfo.xml ---
-                local_issue_details = read_comic_info_from_archive(comic_file)
+                issue_details = None
+                skip_xml_write = False
                 
-                if local_issue_details:
-                    # If local XML is found and parsed, use it to organize the file directly
-                    new_file_path = organize_file(comic_file, local_issue_details, base_output_dir, args.dry_run, version_str, skip_xml_write=True)
+                # --- NEW: Prioritize and Assess local ComicInfo.xml ---
+                local_details, is_complete = read_comic_info_from_archive(comic_file)
+                
+                if local_details:
+                    if is_complete:
+                        # If XML is complete, use it and skip API calls and XML writing
+                        print(f"  {Fore.GREEN}✔ Using complete local ComicInfo.xml. Skipping API call.{Style.RESET_ALL}")
+                        issue_details = local_details
+                        skip_xml_write = True
+                    else:
+                        # If XML is incomplete, use its data to enrich from the API
+                        print(f"  {Fore.YELLOW}⚠️ Incomplete ComicInfo.xml found. Attempting to enrich from API...{Style.RESET_ALL}")
+                        # We can reuse the identify_comic function, it will use the series/issue info
+                        # and fetch the full details in one go.
+                        cover_image = extract_cover_image(comic_file)
+                        if cover_image:
+                             issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
+                        # We will NOT skip XML write, as we want to overwrite the incomplete one.
+                
+                # --- FALLBACK: Use existing API logic if no local XML was found ---
+                if not issue_details:
+                    cover_image = extract_cover_image(comic_file)
+                    if cover_image:
+                        issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
+                    else:
+                        print(f"  {Fore.RED} ✗ Could not extract cover image from {os.path.basename(comic_file)}.{Style.RESET_ALL}")
+
+                # --- Organize the file with the determined details ---
+                if issue_details:
+                    new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str, skip_xml_write=skip_xml_write)
                     if new_file_path:
                         processed_comics.add(new_file_path)
                         if not new_series_folder_path:
                             new_series_folder_path = os.path.dirname(new_file_path)
-                else:
-                    # --- FALLBACK: Use existing API logic ---
-                    cover_image = extract_cover_image(comic_file)
-                    if cover_image:
-                        print(f"  {Fore.GREEN} ✔ Successfully extracted cover image.{Style.RESET_ALL}")
-                        issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str)
-                        
-                        if issue_details:
-                            new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str)
-                            if new_file_path:
-                                processed_comics.add(new_file_path)
-                                if not new_series_folder_path:
-                                    new_series_folder_path = os.path.dirname(new_file_path)
-                    else:
-                        print(f"  {Fore.RED} ✗ Could not extract cover image from {os.path.basename(comic_file)}.{Style.RESET_ALL}")
 
             # --- Extras and Cleanup Logic ---
             if not args.dry_run and new_series_folder_path:
