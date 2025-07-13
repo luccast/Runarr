@@ -15,22 +15,23 @@ A tool to organize comic book runs in archive (CBZ/CBR) format by fetching metad
 - Fetches metadata from Comic Vine with built in automated rate limiting system
 - Select from matched series with link to Comic Vine Series
 - Renames files and folders based on series, issue, and date
-- Converts `.cbr` files to `.cbz` automatically
+- Converts `.cbr` files to `.cbz` automatically, with a progress bar for large files.
 - Embeds `ComicInfo.xml` metadata into `.cbz` files
 - Handles extra files and places them in an `Extras` folder
 - Supports dry-run mode for safe testing
+- Interactive progress bars for a better user experience.
 
 ## Requirements
 - Python 3.7+
 - [Comic Vine API Key](https://comicvine.gamespot.com/api/)
-- For .cbr file support: `unrar` (or equivalent) must be installed and available in your system PATH
+- For .cbr file support: `unrar` (or equivalent) must be installed and available in your system PATH. On macOS, you can install it with `brew install unar`.
 
 ## Installation
 
 1. **Clone the repository:**
    ```sh
-   git clone <your-repo-url>
-   cd <your-repo-directory>
+   git clone https://github.com/luccast/Runarr.git
+   cd Runarr
    ```
 
 2. **Install dependencies:**
@@ -62,19 +63,23 @@ You can run the tool using the installed script or directly via Python:
 
 ### As a CLI tool (after `pip install .`):
 ```sh
-runarr [input_dir] [output_dir] [--series-folder SERIES] [--dry-run]
+runarr [input_dir] [output_dir] [options]
 ```
 
 ### Or directly:
 ```sh
-python -m comic_organizer.main [input_dir] [output_dir] [--series-folder SERIES] [--dry-run]
+python -m comic_organizer.main [input_dir] [output_dir] [options]
 ```
 
 #### Arguments
-- `[input_dir]`: (Optional) Directory containing your comic files (CBZ/CBR). Defaults to the current directory if not specified.
-- `[output_dir]`: (Optional) Directory to store organized files (defaults to in-place)
+- `input_dir`: (Optional) Directory containing your comic files (CBZ/CBR). Defaults to the current directory if not specified.
+- `output_dir`: (Optional) Directory to store organized files (defaults to in-place)
 - `--series-folder SERIES`: (Optional) Only process a specific series folder within the input directory
 - `--dry-run`: Perform a dry run without moving or renaming files
+- `--force-refresh`: Force a refresh of cached data for a specific series folder.
+- `-o`, `--overwrite`: Treat issues as if they have no metadata, forcing a re-download and overwrite.
+- `-y`, `--yes`: Automatically answer yes to all prompts and skip confirmations.
+- `--comicvine-api-key`: Set or update your Comic Vine API key. This will be saved for future use.
 
 #### Example
 ```sh
@@ -87,5 +92,8 @@ runarr /path/to/comics /path/to/organized --dry-run
 - Extra files in comic folders are moved to an `Extras` subfolder.
 - The tool requires an internet connection to fetch metadata from Comic Vine.
 
+## Contributing
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
+
 ## License
-MIT
+[MIT](https://choosealicense.com/licenses/mit/)
