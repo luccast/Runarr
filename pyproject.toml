@@ -25,6 +25,7 @@ dependencies = [
     "Pillow",
     "python-dotenv",
     "colorama",
+    "rich",
 ]
 
 [project.scripts]

@@ -5,3 +5,4 @@ imagehash
 guessit
 Pillow
 python-dotenv
+rich

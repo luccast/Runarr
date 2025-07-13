@@ -18,6 +18,7 @@ from pathlib import Path
 from functools import wraps
 import select
 import sys
+from rich.progress import Progress
 from comic_organizer.comic_info import generate_comic_info_xml
 from comic_organizer.series_info import generate_series_data, write_series_json
 
@@ -216,7 +217,7 @@ def load_volume_from_series_json(folder_path, overwrite=False):
 
 import re
 
-def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run, version_str=None, overwrite=False):
+def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cache, issue_details_cache, output_dir, dry_run, progress, version_str=None, overwrite=False):
     file_name = os.path.basename(comic_file_path)
     folder_name = os.path.basename(os.path.dirname(comic_file_path))
     folder_path = os.path.dirname(comic_file_path)
@@ -279,7 +280,7 @@ def identify_comic(comic_file_path, cover_image, series_cache, volume_issues_cac
             
             if not selected_volume:
                 # If not found or failed to load, then go to the API
-                volume_summary = select_series(series_title, series_year)
+                volume_summary = select_series(series_title, series_year, progress)
                 if not volume_summary:
                     series_cache[folder_path] = None  # Cache failure
                     return None
@@ -462,68 +463,75 @@ def fetch_issue_details(issue_summary, volume):
 
 
 @rate_limited()
-def select_series(series_title, series_year=None):
+def select_series(series_title, series_year=None, progress=None):
     """
     Searches for a series and prompts the user to select from the results.
     Rate limited to 1 request per X seconds.
     """
-    if not COMICVINE_API_KEY:
-        print("  Comic Vine API key is not set. Skipping search.")
-        return None
-
-    print(f"{Fore.CYAN} 🏃‍➡️ Searching Comic Vine for series '{series_title}' (Year: {series_year or 'Any'})...{Style.RESET_ALL}")
-
-    # Search for the volume (series)
-    search_url = "https://comicvine.gamespot.com/api/search/"
-    params = {
-        "api_key": COMICVINE_API_KEY,
-        "format": "json",
-        "query": series_title,
-        "resources": "volume",
-    }
-    headers = { "User-Agent": "ComicOrganizer/1.0" }
-
-    response = make_api_request(search_url, params, headers)
-    if not response:
-        return None
-
-    results = response.json().get('results', [])
+    if progress:
+        progress.stop()
     
-    # Always give the user a choice, even if there's only one result
-    print(f"{Fore.YELLOW} 👉 Please select the correct series (or provide a URL):{Style.RESET_ALL}")
-    for i, res in enumerate(results):
-        print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
-    
-    print(f"    {Fore.CYAN}S:{Style.RESET_ALL} Skip this series")
-    print(f"    {Fore.CYAN}URL:{Style.RESET_ALL} Paste a direct Comic Vine URL")
-
-    while True:
-        choice = input(f"{Fore.YELLOW} 👉 Enter your choice: {Style.RESET_ALL}").strip().lower()
-        
-        if choice == 's':
+    try:
+        if not COMICVINE_API_KEY:
+            print("  Comic Vine API key is not set. Skipping search.")
             return None
-        
-        if choice == 'url':
-            url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL: {Style.RESET_ALL}").strip()
-            # Regex to find the volume ID (e.g., 4050-XXXXX)
-            match = re.search(r'/4050-(\d+)/', url)
-            if match:
-                volume_id = match.group(1)
-                print(f"{Fore.CYAN} 🏃‍➡️ Found Volume ID {volume_id} from URL. Fetching details...{Style.RESET_ALL}")
-                # Fetch full details directly, bypassing the normal search flow
-                return fetch_series_details(volume_id)
-            else:
-                print(f"{Fore.RED} ✗ Invalid Comic Vine URL format. Please try again.{Style.RESET_ALL}")
-                continue
 
-        try:
-            choice_num = int(choice)
-            if 1 <= choice_num <= len(results):
-                return results[choice_num - 1]
-            else:
-                print(f"{Fore.RED} ✗ Invalid number. Please try again.{Style.RESET_ALL}")
-        except ValueError:
-            print(f"{Fore.RED} ✗ Invalid input. Please enter a number, 'S', or 'URL'.{Style.RESET_ALL}")
+        print(f"{Fore.CYAN} 🏃‍➡️ Searching Comic Vine for series '{series_title}' (Year: {series_year or 'Any'})...{Style.RESET_ALL}")
+
+        # Search for the volume (series)
+        search_url = "https://comicvine.gamespot.com/api/search/"
+        params = {
+            "api_key": COMICVINE_API_KEY,
+            "format": "json",
+            "query": series_title,
+            "resources": "volume",
+        }
+        headers = { "User-Agent": "ComicOrganizer/1.0" }
+
+        response = make_api_request(search_url, params, headers)
+        if not response:
+            return None
+
+        results = response.json().get('results', [])
+        
+        # Always give the user a choice, even if there's only one result
+        print(f"{Fore.YELLOW} 👉 Please select the correct series (or provide a URL):{Style.RESET_ALL}")
+        for i, res in enumerate(results):
+            print(f"    {Fore.CYAN}{i+1}:{Style.RESET_ALL} {res.get('name')} ({res.get('start_year')}) - {Style.DIM}{res.get('site_detail_url')}{Style.RESET_ALL}")
+        
+        print(f"    {Fore.CYAN}S:{Style.RESET_ALL} Skip this series")
+        print(f"    {Fore.CYAN}URL:{Style.RESET_ALL} Paste a direct Comic Vine URL")
+
+        while True:
+            choice = input(f"{Fore.YELLOW} 👉 Enter your choice: {Style.RESET_ALL}").strip().lower()
+            
+            if choice == 's':
+                return None
+            
+            if choice == 'url':
+                url = input(f"{Fore.YELLOW} 👉 Paste the Comic Vine URL: {Style.RESET_ALL}").strip()
+                # Regex to find the volume ID (e.g., 4050-XXXXX)
+                match = re.search(r'/4050-(\d+)/', url)
+                if match:
+                    volume_id = match.group(1)
+                    print(f"{Fore.CYAN} 🏃‍➡️ Found Volume ID {volume_id} from URL. Fetching details...{Style.RESET_ALL}")
+                    # Fetch full details directly, bypassing the normal search flow
+                    return fetch_series_details(volume_id)
+                else:
+                    print(f"{Fore.RED} ✗ Invalid Comic Vine URL format. Please try again.{Style.RESET_ALL}")
+                    continue
+
+            try:
+                choice_num = int(choice)
+                if 1 <= choice_num <= len(results):
+                    return results[choice_num - 1]
+                else:
+                    print(f"{Fore.RED} ✗ Invalid number. Please try again.{Style.RESET_ALL}")
+            except ValueError:
+                print(f"{Fore.RED} ✗ Invalid input. Please enter a number, 'S', or 'URL'.{Style.RESET_ALL}")
+    finally:
+        if progress:
+            progress.start()
 
 
 
@@ -946,46 +954,51 @@ Get an API key from: {Fore.BLUE}https://comicvine.gamespot.com/api/{Style.RESET_
             comic_files_in_folder = [f for f in all_files_in_folder if f.lower().endswith('.cbz')]  # Only look for .cbz files now
             extra_files = [f for f in all_files_in_folder if f not in comic_files_in_folder and not f.lower().endswith('.cbr') and os.path.basename(f).lower() != 'series.json']
 
-            for comic_file in comic_files_in_folder:
-                print(f"  {Fore.CYAN}Processing {os.path.basename(comic_file)}...{Style.RESET_ALL}")
+            with Progress(transient=True) as progress:
+                task = progress.add_task(f"[cyan]Processing {os.path.basename(folder)}...", total=len(comic_files_in_folder))
 
-                issue_details = None
-                skip_xml_write = False
-                
-                # --- NEW: Prioritize and Assess local ComicInfo.xml ---
-                local_details, is_complete = read_comic_info_from_archive(comic_file, overwrite=args.overwrite)
-                
-                if local_details:
-                    if is_complete:
-                        # If XML is complete, use it and skip API calls and XML writing
-                        print(f"  {Fore.GREEN}✔ Using complete local ComicInfo.xml. Skipping API call.{Style.RESET_ALL}")
-                        issue_details = local_details
-                        skip_xml_write = True
-                    else:
-                        # If XML is incomplete, use its data to enrich from the API
-                        print(f"  {Fore.YELLOW}⚠️ Incomplete ComicInfo.xml found. Attempting to enrich from API...{Style.RESET_ALL}")
-                        # We can reuse the identify_comic function, it will use the series/issue info
-                        # and fetch the full details in one go.
+                for comic_file in comic_files_in_folder:
+                    progress.update(task, description=f"Processing {os.path.basename(comic_file)}")
+                    
+                    issue_details = None
+                    skip_xml_write = False
+                    
+                    # --- NEW: Prioritize and Assess local ComicInfo.xml ---
+                    local_details, is_complete = read_comic_info_from_archive(comic_file, overwrite=args.overwrite)
+                    
+                    if local_details:
+                        if is_complete:
+                            # If XML is complete, use it and skip API calls and XML writing
+                            print(f"  {Fore.GREEN}✔ Using complete local ComicInfo.xml. Skipping API call.{Style.RESET_ALL}")
+                            issue_details = local_details
+                            skip_xml_write = True
+                        else:
+                            # If XML is incomplete, use its data to enrich from the API
+                            print(f"  {Fore.YELLOW}⚠️ Incomplete ComicInfo.xml found. Attempting to enrich from API...{Style.RESET_ALL}")
+                            # We can reuse the identify_comic function, it will use the series/issue info
+                            # and fetch the full details in one go.
+                            cover_image = extract_cover_image(comic_file)
+                            if cover_image:
+                                 issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, progress, version_str, overwrite=args.overwrite)
+                            # We will NOT skip XML write, as we want to overwrite the incomplete one.
+                    
+                    # --- FALLBACK: Use existing API logic if no local XML was found ---
+                    if not issue_details:
                         cover_image = extract_cover_image(comic_file)
                         if cover_image:
-                             issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str, overwrite=args.overwrite)
-                        # We will NOT skip XML write, as we want to overwrite the incomplete one.
-                
-                # --- FALLBACK: Use existing API logic if no local XML was found ---
-                if not issue_details:
-                    cover_image = extract_cover_image(comic_file)
-                    if cover_image:
-                        issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, version_str, overwrite=args.overwrite)
-                    else:
-                        print(f"  {Fore.RED} ✗ Could not extract cover image from {os.path.basename(comic_file)}.{Style.RESET_ALL}")
+                            issue_details = identify_comic(comic_file, cover_image, series_cache, volume_issues_cache, issue_details_cache, base_output_dir, args.dry_run, progress, version_str, overwrite=args.overwrite)
+                        else:
+                            print(f"  {Fore.RED} ✗ Could not extract cover image from {os.path.basename(comic_file)}.{Style.RESET_ALL}")
 
-                # --- Organize the file with the determined details ---
-                if issue_details:
-                    new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str, skip_xml_write=skip_xml_write)
-                    if new_file_path:
-                        processed_comics.add(new_file_path)
-                        if not new_series_folder_path:
-                            new_series_folder_path = os.path.dirname(new_file_path)
+                    # --- Organize the file with the determined details ---
+                    if issue_details:
+                        new_file_path = organize_file(comic_file, issue_details, base_output_dir, args.dry_run, version_str, skip_xml_write=skip_xml_write)
+                        if new_file_path:
+                            processed_comics.add(new_file_path)
+                            if not new_series_folder_path:
+                                new_series_folder_path = os.path.dirname(new_file_path)
+                    
+                    progress.update(task, advance=1)
 
             # --- Extras and Cleanup Logic ---
             if not args.dry_run and new_series_folder_path:
