@@ -784,16 +784,28 @@ def convert_cbr_to_cbz(cbr_path):
     if is_rarfile(cbr_path):
         temp_dir = tempfile.mkdtemp()
         try:
-            print(f"{Fore.CYAN} 🔄 Converting RAR {cbr_path} to .cbz...{Style.RESET_ALL}")
-            with RarFile(cbr_path, 'r') as archive:
-                archive.extractall(temp_dir)
-            
-            with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+            with Progress(transient=True) as progress:
+                print(f"{Fore.CYAN} 🔄 Converting RAR {cbr_path} to .cbz...{Style.RESET_ALL}")
+                
+                with RarFile(cbr_path, 'r') as archive:
+                    infolist = archive.infolist()
+                    extract_task = progress.add_task("[cyan]Extracting files...", total=len(infolist))
+                    for member in infolist:
+                        archive.extract(member, path=temp_dir)
+                        progress.update(extract_task, advance=1)
+
+                files_to_zip = []
                 for root, _, files in os.walk(temp_dir):
                     for file in files:
                         file_path = os.path.join(root, file)
                         arcname = os.path.relpath(file_path, temp_dir)
+                        files_to_zip.append((file_path, arcname))
+                
+                with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    zip_task = progress.add_task("[cyan]Creating .cbz...", total=len(files_to_zip))
+                    for file_path, arcname in files_to_zip:
                         zf.write(file_path, arcname)
+                        progress.update(zip_task, advance=1)
             
             with zipfile.ZipFile(cbz_path, 'r') as zf:
                 if zf.testzip() is not None:
@@ -805,6 +817,8 @@ def convert_cbr_to_cbz(cbr_path):
 
         except Exception as e:
             print(f"{Fore.RED} ✗ Error converting {cbr_path}: {e}{Style.RESET_ALL}")
+            if 'read enough data' in str(e):
+                print(f"{Fore.YELLOW} 💡 This error suggests the file may be corrupted or in an unsupported RAR format. Try extracting it manually.{Style.RESET_ALL}")
             if os.path.exists(cbz_path):
                 os.remove(cbz_path)
             return None
