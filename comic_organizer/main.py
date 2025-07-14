@@ -86,7 +86,8 @@ def interruptible_wait(duration):
 
     while time.time() < end_time:
         remaining = int(end_time - time.time())
-        sys.stdout.write(f"\r{Fore.YELLOW} ⏳ Waiting for {remaining // 60:02d}m {remaining % 60:02d}s... {prompt} {Style.RESET_ALL}")
+        # Use \r to return to the beginning of the line
+        sys.stdout.write(f"\r{Fore.YELLOW} ⏳ Waiting for {remaining // 60:02d}m {remaining % 60:02d}s... {prompt} {Style.RESET_ALL}   ")
         sys.stdout.flush()
 
         interrupted = False
@@ -105,12 +106,16 @@ def interruptible_wait(duration):
                 interrupted = True
 
         if interrupted:
-            sys.stdout.write("\r" + " " * 80 + "\r") # Clear line
+            # Clear the line before returning
+            sys.stdout.write("\r" + " " * 80 + "\r")
+            sys.stdout.flush()
             return True, time.time() - start_time
 
-    # Wait finished without interruption
-    sys.stdout.write("\r" + " " * 80 + "\r") # Clear line
+    # Clear the line when the wait is over
+    sys.stdout.write("\r" + " " * 80 + "\r")
+    sys.stdout.flush()
     return False, duration
+
 
 
 
