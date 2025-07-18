@@ -29,6 +29,7 @@ A tool to organize comic book runs in archive (CBZ/CBR) format by fetching metad
    - Series ```$Series ($Year)```
    - Issue ```$Series $VolumeY $Annual #$Issue ($monthname $Year)```
    - Folder Structure ```Series / Issue```
+   - Issues must have the issue number in one of these formats in the name ```1 01 001``` to be properly recognized
 
 ## Installation
 
