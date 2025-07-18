@@ -25,6 +25,9 @@ A tool to organize comic book runs in archive (CBZ/CBR) format by fetching metad
 - Python 3.7+
 - [Comic Vine API Key](https://comicvine.gamespot.com/api/)
 - For .cbr file support: `unrar` (or equivalent) must be installed and available in your system PATH. On macOS, you can install it with `brew install unar`.
+- **Important** File Naming: Currently, Runarr only supports series and issue naming in this format:
+   - Series ```$Publisher/$Series ($Year)```
+   - Issue ```$Series $VolumeY $Annual #$Issue ($monthname $Year)```
 
 ## Installation
 
