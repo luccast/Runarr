@@ -102,3 +102,28 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
+
+## Pipeline Diagram
+
+```mermaid
+graph TD
+    A[Start] --> B{Scan for Comic Files};
+    B --> C{Group by Folder};
+    C --> D{For each folder};
+    D --> E{Process CBR to CBZ};
+    E --> F{For each comic file};
+    F --> G{Read ComicInfo.xml};
+    G --> H{Is XML Complete?};
+    H -- Yes --> I[Use Local Data];
+    H -- No --> J{Extract Cover Image};
+    J --> K{Identify Series/Issue};
+    K --> L{Fetch Data from Comic Vine API};
+    L --> M{Enrich Metadata};
+    M --> I;
+    I --> N{Organize File};
+    N --> O{Generate/Overwrite ComicInfo.xml};
+    O --> P{Move/Rename File};
+    P --> F;
+    D --> Q{Cleanup};
+    Q --> R[End];
+```
